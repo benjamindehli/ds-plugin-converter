@@ -26,6 +26,7 @@ struct ConvertResult
     int modes = 0;
     int assetsTranscoded = 0;
     juce::StringArray log;
+    juce::StringArray warnings;   // non-fatal: e.g. WAV length ≠ .dspreset length
     juce::StringArray errors;
 };
 
