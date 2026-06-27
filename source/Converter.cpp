@@ -138,15 +138,10 @@ ConvertResult convertLibrary (const ConvertOptions& options)
         return result;
     }
 
-    // Expected frame counts declared by the .dspreset (sample `length`), so we can
-    // flag — never fix — sources whose real length disagrees (e.g. a WAV re-edited
-    // after the preset was authored, which would throw off frame-based loop points).
-    juce::HashMap<juce::String, juce::int64> expectedFrames;
-    for (const auto& m : library.modes)
-        for (const auto& g : m.groups)
-            for (const auto& s : g.samples)
-                if (s.lengthFrames.has_value() && ! expectedFrames.contains (s.source))
-                    expectedFrames.set (s.source, (juce::int64) *s.lengthFrames);
+    // The audio file is authoritative for length: we record each asset's actual
+    // decoded frame count and write it into the manifest below (the .dspreset
+    // `length` values are unreliable). The audio itself is never trimmed or padded.
+    juce::HashMap<juce::String, juce::int64> actualFrames;
 
     // 3. Transcode assets → FLAC in the output dir.
     if (auto dirResult = options.outDir.createDirectory(); dirResult.failed())
@@ -176,22 +171,46 @@ ConvertResult convertLibrary (const ConvertOptions& options)
             if (formatNote.isNotEmpty())
                 result.warnings.add (formatNote);
 
-            if (expectedFrames.contains (id))
-            {
-                const auto expected = expectedFrames[id];
-                if (expected > 0 && expected != frames)
-                    result.warnings.add (
-                        "length mismatch: " + dst.getFileName() + " has "
-                        + juce::String (frames) + " frames but the .dspreset declares "
-                        + juce::String (expected)
-                        + " — audio left unchanged; verify the sample edit / loop points");
-            }
+            actualFrames.set (id, frames);
         }
         else
         {
             result.errors.add (error);
         }
     }
+
+    // Make the decoded audio length authoritative in the manifest. We note — never
+    // alter — any sample whose .dspreset `length` disagreed.
+    int lengthOverrides = 0;
+    juce::String overrideExample;
+    for (int mi = 0; mi < library.modes.size(); ++mi)
+    {
+        auto& m = library.modes.getReference (mi);
+        for (int gi = 0; gi < m.groups.size(); ++gi)
+        {
+            auto& g = m.groups.getReference (gi);
+            for (int si = 0; si < g.samples.size(); ++si)
+            {
+                auto& s = g.samples.getReference (si);
+                if (! actualFrames.contains (s.source))
+                    continue;
+
+                const auto actual = (int) actualFrames[s.source];
+                if (s.lengthFrames.has_value() && *s.lengthFrames != actual)
+                {
+                    ++lengthOverrides;
+                    if (overrideExample.isEmpty())
+                        overrideExample = flacFileNameForId (s.source) + ": " + juce::String (actual)
+                                        + " vs declared " + juce::String (*s.lengthFrames);
+                }
+                s.lengthFrames = actual;
+            }
+        }
+    }
+    if (lengthOverrides > 0)
+        result.warnings.add ("used actual audio length for " + juce::String (lengthOverrides)
+            + " sample(s) where the .dspreset declared a different value (e.g. "
+            + overrideExample + "); audio unchanged");
 
     // 4. Write the manifest.
     result.manifestFile = options.outDir.getChildFile ("manifest.json");
