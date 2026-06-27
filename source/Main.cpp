@@ -45,6 +45,13 @@ int main (int argc, char* argv[])
     for (auto& line : result.log)
         std::cout << "  " << line << "\n";
 
+    if (! result.warnings.isEmpty())
+    {
+        std::cout << "\nwarnings (" << result.warnings.size() << "):\n";
+        for (auto& w : result.warnings)
+            std::cout << "  ~ " << w << "\n";
+    }
+
     if (! result.errors.isEmpty())
     {
         std::cout << "\nerrors:\n";
