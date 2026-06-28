@@ -9,6 +9,7 @@
 #include "Converter.h"
 #include <juce_core/juce_core.h>
 #include <iostream>
+#include <optional>
 
 namespace
 {
@@ -22,23 +23,33 @@ juce::File resolvePath (const juce::String& arg)
 
 int main (int argc, char* argv[])
 {
-    juce::StringArray args;
-    for (int i = 1; i < argc; ++i)
-        args.add (juce::String::fromUTF8 (argv[i]));
+    juce::StringArray positional;
+    std::optional<double> reverbGainDb;
 
-    if (args.size() < 2)
+    for (int i = 1; i < argc; ++i)
     {
-        std::cout << "usage: dmse-convert <library-dir> <out-dir> [preset ...]\n"
+        const auto arg = juce::String::fromUTF8 (argv[i]);
+        if (arg == "--reverb-gain" && i + 1 < argc)
+            reverbGainDb = juce::String::fromUTF8 (argv[++i]).getDoubleValue();
+        else
+            positional.add (arg);
+    }
+
+    if (positional.size() < 2)
+    {
+        std::cout << "usage: dmse-convert <library-dir> <out-dir> [preset ...] [--reverb-gain <dB>]\n"
                   << "  Converts DecentSampler .dspreset presets into the engine\n"
-                  << "  JSON manifest + FLAC bundle in <out-dir>.\n";
+                  << "  JSON manifest + FLAC bundle in <out-dir>.\n"
+                  << "  --reverb-gain <dB>  trim every convolution wet (e.g. 12 for Omni-84).\n";
         return 2;
     }
 
     dmconv::ConvertOptions opts;
-    opts.libraryDir = resolvePath (args[0]);
-    opts.outDir     = resolvePath (args[1]);
-    for (int i = 2; i < args.size(); ++i)
-        opts.presetFilter.add (args[i]);
+    opts.libraryDir   = resolvePath (positional[0]);
+    opts.outDir       = resolvePath (positional[1]);
+    opts.reverbGainDb = reverbGainDb;
+    for (int i = 2; i < positional.size(); ++i)
+        opts.presetFilter.add (positional[i]);
 
     const auto result = dmconv::convertLibrary (opts);
 
