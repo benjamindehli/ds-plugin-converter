@@ -153,7 +153,6 @@ ConvertResult convertLibrary (const ConvertOptions& options)
     for (auto& id : assets.getAllKeys())
     {
         const auto src = options.libraryDir.getChildFile (assets[id]);
-        const auto dst = options.outDir.getChildFile (flacFileNameForId (id));
 
         if (! src.existsAsFile())
         {
@@ -161,6 +160,25 @@ ConvertResult convertLibrary (const ConvertOptions& options)
             continue;
         }
 
+        // Images (UI assets) are embedded verbatim, keeping their filename; audio
+        // is transcoded to FLAC.
+        if (id.startsWith ("img:"))
+        {
+            const auto dst = options.outDir.getChildFile (src.getFileName());
+            dst.deleteFile();
+            if (src.copyFileTo (dst))
+            {
+                ++result.assetsTranscoded;
+                result.log.add ("img   " + dst.getFileName());
+            }
+            else
+            {
+                result.errors.add ("cannot copy " + src.getFullPathName());
+            }
+            continue;
+        }
+
+        const auto dst = options.outDir.getChildFile (flacFileNameForId (id));
         juce::int64 frames = 0;
         juce::String formatNote, error;
         if (transcodeToFlac (src, dst, frames, formatNote, error))
@@ -212,6 +230,45 @@ ConvertResult convertLibrary (const ConvertOptions& options)
             + " sample(s) where the .dspreset declared a different value (e.g. "
             + overrideExample + "); audio unchanged");
 
+    // Disable loops whose points fall outside the actual audio (e.g. authored
+    // against a stale .dspreset length). Manifest honesty — the audio is untouched;
+    // the engine also clamps defensively at load.
+    int loopIssues = 0;
+    juce::String loopExample;
+    for (int mi = 0; mi < library.modes.size(); ++mi)
+    {
+        auto& m = library.modes.getReference (mi);
+        for (int gi = 0; gi < m.groups.size(); ++gi)
+        {
+            auto& g = m.groups.getReference (gi);
+            for (int si = 0; si < g.samples.size(); ++si)
+            {
+                auto& s = g.samples.getReference (si);
+                if (! s.loop.enabled)
+                    continue;
+
+                const juce::int64 frames = actualFrames.contains (s.source)
+                                               ? actualFrames[s.source]
+                                               : (juce::int64) s.lengthFrames.value_or (0);
+                const int st = s.loop.start.value_or (0);
+                const int en = s.loop.end.value_or (0);
+
+                if (frames > 0 && (st < 0 || en <= st || (juce::int64) en > frames))
+                {
+                    s.loop.enabled = false;
+                    ++loopIssues;
+                    if (loopExample.isEmpty())
+                        loopExample = flacFileNameForId (s.source) + ": loop " + juce::String (st)
+                                    + ".." + juce::String (en) + " vs " + juce::String (frames) + " frames";
+                }
+            }
+        }
+    }
+    if (loopIssues > 0)
+        result.warnings.add ("disabled " + juce::String (loopIssues)
+            + " out-of-range loop(s) (e.g. " + loopExample
+            + "); re-author the loop points in the source — audio unchanged");
+
     // Optional reverb wet trim: bake the requested dB into every convolution
     // effect's outputLevel so the engine balances the normalised IR by default.
     if (options.reverbGainDb.has_value())
@@ -234,6 +291,22 @@ ConvertResult convertLibrary (const ConvertOptions& options)
             result.log.add ("reverb wet gain " + juce::String (*options.reverbGainDb, 1)
                             + " dB applied to " + juce::String (n) + " convolution effect(s)");
     }
+
+    // Shift UI element y so manifest coordinates are background-relative (the
+    // DecentSampler menu bar offset — see ConvertOptions::uiYOffset).
+    if (options.uiYOffset != 0)
+        for (int mi = 0; mi < library.modes.size(); ++mi)
+        {
+            auto& ui = library.modes.getReference (mi).ui;
+            for (int ti = 0; ti < ui.tabs.size(); ++ti)
+            {
+                auto& t = ui.tabs.getReference (ti);
+                for (int i = 0; i < t.controls.size(); ++i) t.controls.getReference (i).rect.y += options.uiYOffset;
+                for (int i = 0; i < t.buttons.size();  ++i) t.buttons.getReference (i).rect.y  += options.uiYOffset;
+                for (int i = 0; i < t.images.size();   ++i) t.images.getReference (i).rect.y   += options.uiYOffset;
+                for (int i = 0; i < t.menus.size();    ++i) t.menus.getReference (i).rect.y    += options.uiYOffset;
+            }
+        }
 
     // 4. Write the manifest.
     result.manifestFile = options.outDir.getChildFile ("manifest.json");

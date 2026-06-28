@@ -23,6 +23,12 @@ struct ConvertOptions
     // so the engine trims the normalised reverb wet to taste. Library-specific
     // (the IR normalisation offset differs per library), hence opt-in.
     std::optional<double> reverbGainDb;
+
+    // Added to every UI element's y so manifest coords are background-relative:
+    // DecentSampler positions controls below its menu bar that the bg image spans
+    // but our renderer doesn't draw. ~50 in the half-scaled UI logical space
+    // (the menu bar is ~100 px in the 2× background image).
+    int uiYOffset = 50;
 };
 
 struct ConvertResult

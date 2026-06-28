@@ -25,12 +25,15 @@ int main (int argc, char* argv[])
 {
     juce::StringArray positional;
     std::optional<double> reverbGainDb;
+    std::optional<int> uiYOffset;
 
     for (int i = 1; i < argc; ++i)
     {
         const auto arg = juce::String::fromUTF8 (argv[i]);
         if (arg == "--reverb-gain" && i + 1 < argc)
             reverbGainDb = juce::String::fromUTF8 (argv[++i]).getDoubleValue();
+        else if (arg == "--ui-y-offset" && i + 1 < argc)
+            uiYOffset = juce::String::fromUTF8 (argv[++i]).getIntValue();
         else
             positional.add (arg);
     }
@@ -40,7 +43,8 @@ int main (int argc, char* argv[])
         std::cout << "usage: dmse-convert <library-dir> <out-dir> [preset ...] [--reverb-gain <dB>]\n"
                   << "  Converts DecentSampler .dspreset presets into the engine\n"
                   << "  JSON manifest + FLAC bundle in <out-dir>.\n"
-                  << "  --reverb-gain <dB>  trim every convolution wet (e.g. 12 for Omni-84).\n";
+                  << "  --reverb-gain <dB>   trim every convolution wet (e.g. 12 for Omni-84).\n"
+                  << "  --ui-y-offset <px>   shift UI elements down (default 100; menu-bar offset).\n";
         return 2;
     }
 
@@ -48,6 +52,8 @@ int main (int argc, char* argv[])
     opts.libraryDir   = resolvePath (positional[0]);
     opts.outDir       = resolvePath (positional[1]);
     opts.reverbGainDb = reverbGainDb;
+    if (uiYOffset.has_value())
+        opts.uiYOffset = *uiYOffset;
     for (int i = 2; i < positional.size(); ++i)
         opts.presetFilter.add (positional[i]);
 

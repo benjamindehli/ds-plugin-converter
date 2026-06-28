@@ -42,17 +42,28 @@ std::optional<bool> optB (const XmlElement& e, juce::StringRef n)
     return e.hasAttribute (n) ? std::optional<bool> (toBool (e.getStringAttribute (n))) : std::nullopt;
 }
 
-juce::var translationValueVar (const juce::String& s)
+// Register an image asset (bg, knob skin, button state, light, PATH swap). Stored
+// in the asset table with an "img:" id; the converter copies these verbatim
+// (no transcode). Returns the asset id, or "" for an empty path.
+juce::String registerImage (ParseResult& res, const juce::String& path)
+{
+    if (path.isEmpty())
+        return {};
+    const auto id = "img:" + stem (path);
+    res.assets.set (id, path);
+    return id;
+}
+
+juce::var parseTranslationValue (ParseResult& res, const juce::String& s)
 {
     if (s.equalsIgnoreCase ("true"))  return juce::var (true);
     if (s.equalsIgnoreCase ("false")) return juce::var (false);
-    // image PATH payloads → asset id; otherwise keep the raw string.
-    if (s.containsChar ('/') || s.endsWithIgnoreCase (".png") || s.endsWithIgnoreCase (".jpg"))
-        return juce::var ("img:" + stem (s));
+    if (s.endsWithIgnoreCase (".png") || s.endsWithIgnoreCase (".jpg") || s.endsWithIgnoreCase (".jpeg"))
+        return juce::var (registerImage (res, s));   // PATH image swap → asset id
     return juce::var (s);
 }
 
-dm::Binding parseBinding (const XmlElement& e)
+dm::Binding parseBinding (const XmlElement& e, ParseResult& res)
 {
     dm::Binding b;
     b.type        = e.getStringAttribute ("type");
@@ -75,7 +86,7 @@ dm::Binding parseBinding (const XmlElement& e)
     b.position     = optI (e, "position");
 
     if (e.hasAttribute ("translationValue"))
-        b.translationValue = translationValueVar (e.getStringAttribute ("translationValue"));
+        b.translationValue = parseTranslationValue (res, e.getStringAttribute ("translationValue"));
 
     return b;
 }
@@ -226,7 +237,7 @@ dm::NoteSequence parseSequence (const XmlElement& e)
     return seq;
 }
 
-dm::Lfo parseLfo (const XmlElement& e)
+dm::Lfo parseLfo (const XmlElement& e, ParseResult& res)
 {
     dm::Lfo l;
     l.shape     = e.getStringAttribute ("shape");
@@ -234,20 +245,151 @@ dm::Lfo parseLfo (const XmlElement& e)
     l.modAmount = e.getDoubleAttribute ("modAmount", 0.0);
     for (auto* b : e.getChildIterator())
         if (b->hasTagName ("binding"))
-            l.bindings.add (parseBinding (*b));
+            l.bindings.add (parseBinding (*b, res));
     return l;
 }
 
-// M2: UI background, size and keyboard colours only. Full control/button/binding
-// mapping lands with the UI renderer (M4).
-void parseUi (const XmlElement& e, dm::Ui& ui)
+dm::Rect parseRect (const XmlElement& e)
 {
-    if (e.hasAttribute ("bgImage"))
-        ui.background = "img:" + stem (e.getStringAttribute ("bgImage"));
+    return { e.getIntAttribute ("x"), e.getIntAttribute ("y"),
+             e.getIntAttribute ("width"), e.getIntAttribute ("height") };
+}
+
+dm::Control parseControl (const XmlElement& e, ParseResult& res)
+{
+    dm::Control c;
+    c.rect      = parseRect (e);
+    c.label     = e.getStringAttribute ("parameterName");
+    c.valueType = e.getStringAttribute ("type");
+    c.min       = optD (e, "minValue");
+    c.max       = optD (e, "maxValue");
+    c.value     = optD (e, "value");
+    c.textColor = e.getStringAttribute ("textColor");
+    c.style     = e.getStringAttribute ("style");
+    c.mouseDragSensitivity = optD (e, "mouseDragSensitivity");
+
+    if (e.hasAttribute ("customSkinImage"))
+    {
+        dm::CustomSkin skin;
+        skin.image       = registerImage (res, e.getStringAttribute ("customSkinImage"));
+        skin.numFrames   = optI (e, "customSkinNumFrames");
+        skin.orientation = e.getStringAttribute ("customSkinImageOrientation");
+        c.skin = skin;
+    }
+
+    for (auto* b : e.getChildIterator())
+        if (b->hasTagName ("binding"))
+            c.bindings.add (parseBinding (*b, res));
+    return c;
+}
+
+dm::Button parseButton (const XmlElement& e, ParseResult& res)
+{
+    dm::Button b;
+    b.rect  = parseRect (e);
+    b.style = e.getStringAttribute ("style");
+    b.value = optI (e, "value");
+
+    for (auto* s : e.getChildIterator())
+        if (s->hasTagName ("state"))
+        {
+            dm::ButtonState st;
+            st.name       = s->getStringAttribute ("name");
+            st.mainImage  = registerImage (res, s->getStringAttribute ("mainImage"));
+            st.hoverImage = registerImage (res, s->getStringAttribute ("hoverImage"));
+            st.clickImage = registerImage (res, s->getStringAttribute ("clickImage"));
+            for (auto* bnd : s->getChildIterator())
+                if (bnd->hasTagName ("binding"))
+                    st.bindings.add (parseBinding (*bnd, res));
+            b.states.add (st);
+        }
+    return b;
+}
+
+dm::UiImage parseImage (const XmlElement& e, ParseResult& res)
+{
+    dm::UiImage img;
+    img.rect            = parseRect (e);
+    img.image           = registerImage (res, e.getStringAttribute ("path"));
+    img.aspectRatioMode = e.getStringAttribute ("aspectRatioMode");
+    return img;
+}
+
+dm::Menu parseMenu (const XmlElement& e)
+{
+    dm::Menu m;
+    m.rect  = parseRect (e);
+    m.value = e.getIntAttribute ("value", 1);
+
+    for (auto* o : e.getChildIterator())
+        if (o->hasTagName ("option"))
+        {
+            dm::MenuOption mo;
+            mo.name = o->getStringAttribute ("name");
+            // The SEQ_INDEX this option selects = its noteIndex-0 binding value
+            // (Omni-84's options offset the whole sequence block by 0/84/168/252).
+            for (auto* b : o->getChildIterator())
+                if (b->hasTagName ("binding")
+                    && b->getStringAttribute ("parameter") == "SEQ_INDEX"
+                    && b->getIntAttribute ("noteIndex", -1) == 0)
+                {
+                    mo.seqIndex = b->getIntAttribute ("translationValue", 0);
+                    break;
+                }
+            m.options.add (mo);
+        }
+    return m;
+}
+
+void parseUi (const XmlElement& e, dm::Ui& ui, ParseResult& res)
+{
+    ui.background = registerImage (res, e.getStringAttribute ("bgImage"));
     ui.width      = e.getIntAttribute ("width", 0);
     ui.height     = e.getIntAttribute ("height", 0);
     ui.layoutMode = e.getStringAttribute ("layoutMode");
     ui.bgMode     = e.getStringAttribute ("bgMode");
+
+    dm::Tab loose;   // controls placed directly under <ui> (no <tab>)
+    bool sawTab = false;
+
+    for (auto* ch : e.getChildIterator())
+    {
+        if (ch->hasTagName ("tab"))
+        {
+            dm::Tab tab;
+            tab.name = ch->getStringAttribute ("name");
+            for (auto* node : ch->getChildIterator())
+            {
+                if (node->hasTagName ("control"))     tab.controls.add (parseControl (*node, res));
+                else if (node->hasTagName ("button")) tab.buttons.add  (parseButton (*node, res));
+                else if (node->hasTagName ("image"))  tab.images.add   (parseImage (*node, res));
+                else if (node->hasTagName ("menu"))   tab.menus.add    (parseMenu (*node));
+            }
+            ui.tabs.add (tab);
+            sawTab = true;
+        }
+        else if (ch->hasTagName ("control")) loose.controls.add (parseControl (*ch, res));
+        else if (ch->hasTagName ("button"))  loose.buttons.add  (parseButton (*ch, res));
+        else if (ch->hasTagName ("image"))   loose.images.add   (parseImage (*ch, res));
+        else if (ch->hasTagName ("menu"))    loose.menus.add    (parseMenu (*ch));
+    }
+
+    if (! loose.controls.isEmpty() || ! loose.buttons.isEmpty()
+        || ! loose.images.isEmpty() || ! loose.menus.isEmpty())
+    {
+        if (sawTab)
+        {
+            auto& t = ui.tabs.getReference (0);
+            t.controls.addArray (loose.controls);
+            t.buttons.addArray (loose.buttons);
+            t.images.addArray (loose.images);
+            t.menus.addArray (loose.menus);
+        }
+        else
+        {
+            ui.tabs.add (loose);
+        }
+    }
 
     if (auto* kb = e.getChildByName ("keyboard"))
         for (auto* c : kb->getChildIterator())
@@ -299,10 +441,31 @@ ParseResult parseDspreset (const juce::String& xmlText, const juce::String& mode
             if (s->hasTagName ("sequence"))
                 res.mode.sequences.add (parseSequence (*s));
 
+    // <midi> note → note_sequence bindings become the engine's sequenceTriggers
+    // (each key fires a sequence). The sequences are absolute, so transpose = 0;
+    // the chord-ordering menu's SEQ_INDEX offset is applied at runtime.
+    if (auto* midi = xml->getChildByName ("midi"))
+        for (auto* n : midi->getChildIterator())
+            if (n->hasTagName ("note"))
+                for (auto* b : n->getChildIterator())
+                    if (b->hasTagName ("binding")
+                        && b->getStringAttribute ("type") == "note_sequence")
+                    {
+                        dm::SequenceTrigger t;
+                        t.note          = n->getIntAttribute ("note", 60);
+                        t.sequence      = b->getIntAttribute ("seqIndex", 0);
+                        t.transpose     = 0;
+                        t.rate          = b->getDoubleAttribute ("seqPlaybackRate", 10.0);
+                        t.loop          = b->getStringAttribute ("seqLoopMode") == "loop";
+                        t.trackVelocity = toBool (b->getStringAttribute ("seqTrackMidiInputVelocity", "1"));
+                        t.swallow       = toBool (n->getStringAttribute ("swallowNotes", "0"));
+                        res.mode.sequenceTriggers.add (t);
+                    }
+
     if (auto* mods = xml->getChildByName ("modulators"))
         for (auto* m : mods->getChildIterator())
             if (m->hasTagName ("lfo"))
-                res.mode.modulators.add (parseLfo (*m));
+                res.mode.modulators.add (parseLfo (*m, res));
 
     if (auto* tags = xml->getChildByName ("tags"))
         for (auto* t : tags->getChildIterator())
@@ -315,7 +478,7 @@ ParseResult parseDspreset (const juce::String& xmlText, const juce::String& mode
             }
 
     if (auto* ui = xml->getChildByName ("ui"))
-        parseUi (*ui, res.mode.ui);
+        parseUi (*ui, res.mode.ui, res);
 
     res.ok = res.errors.isEmpty() && ! res.mode.groups.isEmpty();
     return res;
