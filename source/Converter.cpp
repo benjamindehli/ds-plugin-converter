@@ -212,6 +212,29 @@ ConvertResult convertLibrary (const ConvertOptions& options)
             + " sample(s) where the .dspreset declared a different value (e.g. "
             + overrideExample + "); audio unchanged");
 
+    // Optional reverb wet trim: bake the requested dB into every convolution
+    // effect's outputLevel so the engine balances the normalised IR by default.
+    if (options.reverbGainDb.has_value())
+    {
+        int n = 0;
+        for (int mi = 0; mi < library.modes.size(); ++mi)
+        {
+            auto& m = library.modes.getReference (mi);
+            for (int ei = 0; ei < m.effects.size(); ++ei)
+            {
+                auto& e = m.effects.getReference (ei);
+                if (e.type == "convolution")
+                {
+                    e.outputLevel = *options.reverbGainDb;
+                    ++n;
+                }
+            }
+        }
+        if (n > 0)
+            result.log.add ("reverb wet gain " + juce::String (*options.reverbGainDb, 1)
+                            + " dB applied to " + juce::String (n) + " convolution effect(s)");
+    }
+
     // 4. Write the manifest.
     result.manifestFile = options.outDir.getChildFile ("manifest.json");
     const auto json = dm::writeManifestToJson (library);

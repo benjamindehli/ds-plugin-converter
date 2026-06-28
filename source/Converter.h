@@ -7,6 +7,7 @@
 // output dir, and writes the manifest JSON via the engine's ManifestWriter.
 
 #include <juce_core/juce_core.h>
+#include <optional>
 
 namespace dmconv
 {
@@ -17,6 +18,11 @@ struct ConvertOptions
     juce::File outDir;                // where FLAC bundle + manifest.json are written
     juce::String libraryName;         // manifest "library" name (default: libraryDir name)
     juce::StringArray presetFilter;   // mode stems to include; empty = all *.dspreset
+
+    // When set, written as `effect.outputLevel` (dB) on every convolution effect,
+    // so the engine trims the normalised reverb wet to taste. Library-specific
+    // (the IR normalisation offset differs per library), hence opt-in.
+    std::optional<double> reverbGainDb;
 };
 
 struct ConvertResult
