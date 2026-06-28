@@ -341,6 +341,21 @@ dm::Menu parseMenu (const XmlElement& e)
     return m;
 }
 
+// Parse a container's UI children into a Tab, assigning each element its
+// document-order index (DecentSampler's controlIndex). PATH bindings address
+// lights by that index, so it must count every control/button/image/menu in order.
+void parseUiChildren (const XmlElement& parent, dm::Tab& tab, ParseResult& res)
+{
+    int uiIndex = 0;
+    for (auto* node : parent.getChildIterator())
+    {
+        if      (node->hasTagName ("control")) { tab.controls.add (parseControl (*node, res)); ++uiIndex; }
+        else if (node->hasTagName ("button"))  { tab.buttons.add  (parseButton  (*node, res)); ++uiIndex; }
+        else if (node->hasTagName ("image"))   { auto im = parseImage (*node, res); im.controlIndex = uiIndex++; tab.images.add (im); }
+        else if (node->hasTagName ("menu"))    { tab.menus.add    (parseMenu     (*node));     ++uiIndex; }
+    }
+}
+
 void parseUi (const XmlElement& e, dm::Ui& ui, ParseResult& res)
 {
     ui.background = registerImage (res, e.getStringAttribute ("bgImage"));
@@ -358,21 +373,14 @@ void parseUi (const XmlElement& e, dm::Ui& ui, ParseResult& res)
         {
             dm::Tab tab;
             tab.name = ch->getStringAttribute ("name");
-            for (auto* node : ch->getChildIterator())
-            {
-                if (node->hasTagName ("control"))     tab.controls.add (parseControl (*node, res));
-                else if (node->hasTagName ("button")) tab.buttons.add  (parseButton (*node, res));
-                else if (node->hasTagName ("image"))  tab.images.add   (parseImage (*node, res));
-                else if (node->hasTagName ("menu"))   tab.menus.add    (parseMenu (*node));
-            }
+            parseUiChildren (*ch, tab, res);
             ui.tabs.add (tab);
             sawTab = true;
         }
-        else if (ch->hasTagName ("control")) loose.controls.add (parseControl (*ch, res));
-        else if (ch->hasTagName ("button"))  loose.buttons.add  (parseButton (*ch, res));
-        else if (ch->hasTagName ("image"))   loose.images.add   (parseImage (*ch, res));
-        else if (ch->hasTagName ("menu"))    loose.menus.add    (parseMenu (*ch));
     }
+
+    // Controls placed directly under <ui> (no <tab>) — own document-order index.
+    parseUiChildren (e, loose, res);
 
     if (! loose.controls.isEmpty() || ! loose.buttons.isEmpty()
         || ! loose.images.isEmpty() || ! loose.menus.isEmpty())
