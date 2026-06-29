@@ -85,6 +85,8 @@ dm::Binding parseBinding (const XmlElement& e, ParseResult& res)
     b.parameter   = e.getStringAttribute ("parameter");
     b.translation = e.getStringAttribute ("translation");
     b.modBehavior = e.getStringAttribute ("modBehavior");
+    b.identifier  = e.getStringAttribute ("identifier");        // tag name (level="tag")
+    b.translationTable = e.getStringAttribute ("translationTable");
 
     b.factor               = optD (e, "factor");
     b.modAmount            = optD (e, "modAmount");
@@ -101,6 +103,16 @@ dm::Binding parseBinding (const XmlElement& e, ParseResult& res)
 
     if (e.hasAttribute ("translationValue"))
         b.translationValue = parseTranslationValue (res, e.getStringAttribute ("translationValue"));
+
+    // DecentSampler `position` is the 0-based index within the binding's level —
+    // normalise it to the explicit index the engine resolves against, so the rest
+    // of the pipeline only deals with groupIndex/effectIndex/controlIndex.
+    if (b.position)
+    {
+        if (b.level == "group" && ! b.groupIndex)        b.groupIndex   = b.position;
+        else if (b.type == "effect" && ! b.effectIndex)  b.effectIndex  = b.position;
+        else if (b.level == "ui" && ! b.controlIndex)    b.controlIndex = b.position;
+    }
 
     return b;
 }
