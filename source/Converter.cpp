@@ -126,6 +126,8 @@ ConvertResult convertLibrary (const ConvertOptions& options)
                 result.errors.add (name + ": " + e);
             continue;
         }
+        for (auto& w : parsed.warnings)
+            result.warnings.add (name + ": " + w);
         library.modes.add (parsed.mode);
         for (auto& key : parsed.assets.getAllKeys())
             assets.set (key, parsed.assets[key]);

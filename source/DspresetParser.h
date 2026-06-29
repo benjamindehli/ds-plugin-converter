@@ -26,6 +26,7 @@ struct ParseResult
     juce::StringPairArray assets;
 
     juce::StringArray errors;
+    juce::StringArray warnings;   // non-fatal (e.g. a CC binding targeting an unknown control)
 };
 
 /** Parse a `.dspreset` document. `modeName` is the mode label (normally the

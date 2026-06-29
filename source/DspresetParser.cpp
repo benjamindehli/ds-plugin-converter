@@ -1,4 +1,18 @@
 #include "DspresetParser.h"
+#include <map>
+#include <set>
+
+namespace dmconv
+{
+// A control's resolved engine target + range, keyed by its document-order index,
+// so a <midi><cc> binding's controlIndex can be mapped to a parameter.
+struct UiControlTarget
+{
+    juce::String parameter;
+    std::optional<int> groupIndex;
+    double min = 0.0, max = 1.0;
+};
+}
 
 namespace dmconv
 {
@@ -320,6 +334,9 @@ dm::Menu parseMenu (const XmlElement& e)
     dm::Menu m;
     m.rect  = parseRect (e);
     m.value = e.getIntAttribute ("value", 1);
+    m.textColor       = e.getStringAttribute ("textColor");
+    m.backgroundColor = e.getStringAttribute ("backgroundColor");
+    m.hAlign          = e.getStringAttribute ("hAlign");
 
     for (auto* o : e.getChildIterator())
         if (o->hasTagName ("option"))
@@ -344,19 +361,37 @@ dm::Menu parseMenu (const XmlElement& e)
 // Parse a container's UI children into a Tab, assigning each element its
 // document-order index (DecentSampler's controlIndex). PATH bindings address
 // lights by that index, so it must count every control/button/image/menu in order.
-void parseUiChildren (const XmlElement& parent, dm::Tab& tab, ParseResult& res)
+void parseUiChildren (const XmlElement& parent, dm::Tab& tab, ParseResult& res,
+                      std::map<int, UiControlTarget>& controlsByIndex,
+                      std::set<int>& menuIndices)
 {
     int uiIndex = 0;
     for (auto* node : parent.getChildIterator())
     {
-        if      (node->hasTagName ("control")) { tab.controls.add (parseControl (*node, res)); ++uiIndex; }
+        if (node->hasTagName ("control"))
+        {
+            auto c = parseControl (*node, res);
+            if (! c.bindings.isEmpty())   // record target so <cc>/<note> controlIndex can resolve it
+            {
+                UiControlTarget t;
+                t.parameter  = c.bindings.getReference (0).parameter;
+                t.groupIndex = c.bindings.getReference (0).groupIndex;
+                t.min = c.min.value_or (0.0);
+                t.max = c.max.value_or (1.0);
+                controlsByIndex[uiIndex] = t;
+            }
+            tab.controls.add (c);
+            ++uiIndex;
+        }
         else if (node->hasTagName ("button"))  { tab.buttons.add  (parseButton  (*node, res)); ++uiIndex; }
         else if (node->hasTagName ("image"))   { auto im = parseImage (*node, res); im.controlIndex = uiIndex++; tab.images.add (im); }
-        else if (node->hasTagName ("menu"))    { tab.menus.add    (parseMenu     (*node));     ++uiIndex; }
+        else if (node->hasTagName ("menu"))    { menuIndices.insert (uiIndex); tab.menus.add (parseMenu (*node)); ++uiIndex; }
     }
 }
 
-void parseUi (const XmlElement& e, dm::Ui& ui, ParseResult& res)
+void parseUi (const XmlElement& e, dm::Ui& ui, ParseResult& res,
+              std::map<int, UiControlTarget>& controlsByIndex,
+              std::set<int>& menuIndices)
 {
     ui.background = registerImage (res, e.getStringAttribute ("bgImage"));
     ui.width      = e.getIntAttribute ("width", 0);
@@ -373,14 +408,14 @@ void parseUi (const XmlElement& e, dm::Ui& ui, ParseResult& res)
         {
             dm::Tab tab;
             tab.name = ch->getStringAttribute ("name");
-            parseUiChildren (*ch, tab, res);
+            parseUiChildren (*ch, tab, res, controlsByIndex, menuIndices);
             ui.tabs.add (tab);
             sawTab = true;
         }
     }
 
     // Controls placed directly under <ui> (no <tab>) — own document-order index.
-    parseUiChildren (e, loose, res);
+    parseUiChildren (e, loose, res, controlsByIndex, menuIndices);
 
     if (! loose.controls.isEmpty() || ! loose.buttons.isEmpty()
         || ! loose.images.isEmpty() || ! loose.menus.isEmpty())
@@ -485,8 +520,66 @@ ParseResult parseDspreset (const juce::String& xmlText, const juce::String& mode
                 res.mode.tags.add (tag);
             }
 
+    std::map<int, UiControlTarget> controlsByIndex;
+    std::set<int> menuIndices;
     if (auto* ui = xml->getChildByName ("ui"))
-        parseUi (*ui, res.mode.ui, res);
+        parseUi (*ui, res.mode.ui, res, controlsByIndex, menuIndices);
+
+    // <midi> bindings that target the UI (must be parsed AFTER <ui>):
+    //   <cc number="N">  → CC controls a parameter (e.g. mod wheel → StrumSpeed)
+    //   <note ...>       → a key selects a chord-order menu option (key-switch)
+    if (auto* midi = xml->getChildByName ("midi"))
+        for (auto* el : midi->getChildIterator())
+        {
+            if (el->hasTagName ("cc"))
+            {
+                const int ccNum = el->getIntAttribute ("number", 1);
+                for (auto* b : el->getChildIterator())
+                    if (b->hasTagName ("binding"))
+                    {
+                        const auto ci = optI (*b, "controlIndex");
+                        if (! ci)
+                            continue;
+                        const auto found = controlsByIndex.find (*ci);
+                        if (found == controlsByIndex.end())
+                        {
+                            res.warnings.add ("CC " + juce::String (ccNum) + " binding -> unknown controlIndex "
+                                              + juce::String (*ci));
+                            continue;
+                        }
+                        const auto& tgt = found->second;
+                        const double span   = tgt.max - tgt.min;
+                        const double outMin = b->getDoubleAttribute ("translationOutputMin", tgt.min);
+                        const double outMax = b->getDoubleAttribute ("translationOutputMax", tgt.max);
+                        dm::CcBinding cb;
+                        cb.cc         = ccNum;
+                        cb.parameter  = tgt.parameter;
+                        cb.groupIndex = tgt.groupIndex;
+                        cb.normMin    = (span != 0.0) ? (outMin - tgt.min) / span : 0.0;
+                        cb.normMax    = (span != 0.0) ? (outMax - tgt.min) / span : 1.0;
+                        res.mode.ccBindings.add (cb);
+                    }
+            }
+            else if (el->hasTagName ("note"))
+            {
+                const int note = el->getIntAttribute ("note", -1);
+                for (auto* b : el->getChildIterator())
+                    if (b->hasTagName ("binding")
+                        && b->getStringAttribute ("type") == "control"
+                        && b->getStringAttribute ("parameter") == "VALUE")
+                    {
+                        const auto ci = optI (*b, "controlIndex");
+                        if (ci && menuIndices.count (*ci))   // key-switch onto a (chord-order) menu
+                        {
+                            dm::MenuKeySwitch ks;
+                            ks.note   = note;
+                            ks.option = b->getIntAttribute ("translationValue", 1) - 1;   // 1-based → 0-based
+                            res.mode.menuKeySwitches.add (ks);
+                        }
+                        // note→knob VALUE switches: not needed yet (surface when a library uses them).
+                    }
+            }
+        }
 
     res.ok = res.errors.isEmpty() && ! res.mode.groups.isEmpty();
     return res;
