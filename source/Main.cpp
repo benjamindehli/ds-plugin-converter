@@ -25,6 +25,8 @@ int main (int argc, char* argv[])
 {
     juce::StringArray positional;
     std::optional<double> reverbGainDb;
+    std::optional<double> gainDb;
+    bool normalizeIr = true;
     std::optional<int> uiYOffset;
 
     for (int i = 1; i < argc; ++i)
@@ -32,6 +34,10 @@ int main (int argc, char* argv[])
         const auto arg = juce::String::fromUTF8 (argv[i]);
         if (arg == "--reverb-gain" && i + 1 < argc)
             reverbGainDb = juce::String::fromUTF8 (argv[++i]).getDoubleValue();
+        else if (arg == "--gain" && i + 1 < argc)
+            gainDb = juce::String::fromUTF8 (argv[++i]).getDoubleValue();
+        else if (arg == "--no-normalize-ir")
+            normalizeIr = false;
         else if (arg == "--ui-y-offset" && i + 1 < argc)
             uiYOffset = juce::String::fromUTF8 (argv[++i]).getIntValue();
         else
@@ -40,10 +46,12 @@ int main (int argc, char* argv[])
 
     if (positional.size() < 2)
     {
-        std::cout << "usage: dmse-convert <library-dir> <out-dir> [preset ...] [--reverb-gain <dB>]\n"
+        std::cout << "usage: dmse-convert <library-dir> <out-dir> [preset ...] [--reverb-gain <dB>] [--gain <dB>]\n"
                   << "  Converts DecentSampler .dspreset presets into the engine\n"
                   << "  JSON manifest + FLAC bundle in <out-dir>.\n"
                   << "  --reverb-gain <dB>   trim every convolution wet (e.g. 12 for Omni-84).\n"
+                  << "  --gain <dB>          library-wide pre-FX level trim (e.g. -10 for Midnight Wurli).\n"
+                  << "  --no-normalize-ir    use convolution IRs as recorded (like DS; for cabinet IRs).\n"
                   << "  --ui-y-offset <px>   shift UI elements down (default 100; menu-bar offset).\n";
         return 2;
     }
@@ -52,6 +60,8 @@ int main (int argc, char* argv[])
     opts.libraryDir   = resolvePath (positional[0]);
     opts.outDir       = resolvePath (positional[1]);
     opts.reverbGainDb = reverbGainDb;
+    opts.gainDb       = gainDb;
+    opts.normalizeIr  = normalizeIr;
     if (uiYOffset.has_value())
         opts.uiYOffset = *uiYOffset;
     for (int i = 2; i < positional.size(); ++i)

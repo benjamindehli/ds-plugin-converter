@@ -24,6 +24,16 @@ struct ConvertOptions
     // (the IR normalisation offset differs per library), hence opt-in.
     std::optional<double> reverbGainDb;
 
+    // Library-wide level trim (dB) written to the manifest's top-level `gainDb`; the
+    // engine applies it to the voice mix BEFORE the FX, so the drive/amp sees the
+    // same signal level DecentSampler feeds it (our voice sum runs hotter than DS).
+    std::optional<double> gainDb;
+
+    // When false, convolution IRs are used as recorded (Normalise::no) instead of
+    // energy-normalised — matches DecentSampler, which doesn't normalise. Needed for
+    // cabinet IRs (normalising attenuates them ~14 dB). Per-library, hence opt-out.
+    bool normalizeIr = true;
+
     // Added to every UI element's y so manifest coords are background-relative:
     // DecentSampler positions controls below its menu bar that the bg image spans
     // but our renderer doesn't draw. ~50 in the half-scaled UI logical space

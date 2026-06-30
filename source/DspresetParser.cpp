@@ -1,6 +1,7 @@
 #include "DspresetParser.h"
 #include <map>
 #include <set>
+#include <utility>   // std::swap
 
 namespace dmconv
 {
@@ -74,6 +75,13 @@ juce::var parseTranslationValue (ParseResult& res, const juce::String& s)
     if (s.equalsIgnoreCase ("false")) return juce::var (false);
     if (s.endsWithIgnoreCase (".png") || s.endsWithIgnoreCase (".jpg") || s.endsWithIgnoreCase (".jpeg"))
         return juce::var (registerImage (res, s));   // PATH image swap → asset id
+    if (s.endsWithIgnoreCase (".wav") || s.endsWithIgnoreCase (".flac"))
+    {
+        // FX_IR_FILE swap (menu option or button state) → register + use the asset id.
+        const auto id = "ir:" + stem (s);
+        res.assets.set (id, s);
+        return juce::var (id);
+    }
     return juce::var (s);
 }
 
@@ -87,6 +95,7 @@ dm::Binding parseBinding (const XmlElement& e, ParseResult& res)
     b.modBehavior = e.getStringAttribute ("modBehavior");
     b.identifier  = e.getStringAttribute ("identifier");        // tag name (level="tag")
     b.translationTable = e.getStringAttribute ("translationTable");
+    b.translationReversed = e.getBoolAttribute ("translationReversed", false);
 
     b.factor               = optD (e, "factor");
     b.modAmount            = optD (e, "modAmount");
@@ -157,6 +166,8 @@ dm::Sample parseSample (const XmlElement& e, ParseResult& res)
     s.volume      = optD (e, "volume");
     s.seqPosition = optI (e, "seqPosition");
     s.ampEnvEnabled = optB (e, "ampEnvEnabled");
+    s.onLoCC64    = optI (e, "onLoCC64");
+    s.onHiCC64    = optI (e, "onHiCC64");
 
     if (toBool (e.getStringAttribute ("loopEnabled", "0")))
     {
@@ -167,6 +178,8 @@ dm::Sample parseSample (const XmlElement& e, ParseResult& res)
     }
     return s;
 }
+
+dm::Effect parseEffect (const XmlElement& e, ParseResult& res);   // defined below
 
 dm::Group parseGroup (const XmlElement& e, ParseResult& res)
 {
@@ -204,6 +217,12 @@ dm::Group parseGroup (const XmlElement& e, ParseResult& res)
     g.velTrack      = optD (e, "ampVelTrack");
     g.ampEnvEnabled = optB (e, "ampEnvEnabled");
     g.pitchKeyTrack = optB (e, "pitchKeyTrack");
+
+    // Per-group insert effects (e.g. an organ stop's swell lowpass + loudness gain).
+    if (auto* fxList = e.getChildByName ("effects"))
+        for (auto* fx : fxList->getChildIterator())
+            if (fx->hasTagName ("effect"))
+                g.effects.add (parseEffect (*fx, res));
 
     for (auto* child : e.getChildIterator())
         if (child->hasTagName ("sample"))
@@ -341,7 +360,7 @@ dm::UiImage parseImage (const XmlElement& e, ParseResult& res)
     return img;
 }
 
-dm::Menu parseMenu (const XmlElement& e)
+dm::Menu parseMenu (const XmlElement& e, ParseResult& res)
 {
     dm::Menu m;
     m.rect  = parseRect (e);
@@ -355,16 +374,22 @@ dm::Menu parseMenu (const XmlElement& e)
         {
             dm::MenuOption mo;
             mo.name = o->getStringAttribute ("name");
-            // The SEQ_INDEX this option selects = its noteIndex-0 binding value
-            // (Omni-84's options offset the whole sequence block by 0/84/168/252).
             for (auto* b : o->getChildIterator())
-                if (b->hasTagName ("binding")
-                    && b->getStringAttribute ("parameter") == "SEQ_INDEX"
+            {
+                if (! b->hasTagName ("binding"))
+                    continue;
+
+                // The SEQ_INDEX this option selects = its noteIndex-0 binding value
+                // (Omni-84's options offset the whole sequence block by 0/84/168/252).
+                if (b->getStringAttribute ("parameter") == "SEQ_INDEX"
                     && b->getIntAttribute ("noteIndex", -1) == 0)
-                {
                     mo.seqIndex = b->getIntAttribute ("translationValue", 0);
-                    break;
-                }
+
+                // Effect bindings (amp/cabinet selector etc.) are applied on selection.
+                // FX_IR_FILE paths are registered + rewritten to asset ids inside
+                // parseBinding (via parseTranslationValue), same as button states.
+                mo.bindings.add (parseBinding (*b, res));
+            }
             m.options.add (mo);
         }
     return m;
@@ -397,7 +422,7 @@ void parseUiChildren (const XmlElement& parent, dm::Tab& tab, ParseResult& res,
         }
         else if (node->hasTagName ("button"))  { tab.buttons.add  (parseButton  (*node, res)); ++uiIndex; }
         else if (node->hasTagName ("image"))   { auto im = parseImage (*node, res); im.controlIndex = uiIndex++; tab.images.add (im); }
-        else if (node->hasTagName ("menu"))    { menuIndices.insert (uiIndex); tab.menus.add (parseMenu (*node)); ++uiIndex; }
+        else if (node->hasTagName ("menu"))    { menuIndices.insert (uiIndex); tab.menus.add (parseMenu (*node, res)); ++uiIndex; }
     }
 }
 
@@ -549,7 +574,10 @@ ParseResult parseDspreset (const juce::String& xmlText, const juce::String& mode
                 for (auto* b : el->getChildIterator())
                     if (b->hasTagName ("binding"))
                     {
-                        const auto ci = optI (*b, "controlIndex");
+                        // The target control is addressed by controlIndex OR position
+                        // (DecentSampler uses either; both are the doc-order UI index).
+                        auto ci = optI (*b, "controlIndex");
+                        if (! ci) ci = optI (*b, "position");
                         if (! ci)
                             continue;
                         const auto found = controlsByIndex.find (*ci);
@@ -569,6 +597,8 @@ ParseResult parseDspreset (const juce::String& xmlText, const juce::String& mode
                         cb.groupIndex = tgt.groupIndex;
                         cb.normMin    = (span != 0.0) ? (outMin - tgt.min) / span : 0.0;
                         cb.normMax    = (span != 0.0) ? (outMax - tgt.min) / span : 1.0;
+                        if (b->getBoolAttribute ("translationReversed", false))
+                            std::swap (cb.normMin, cb.normMax);   // mod wheel inverted (e.g. Swell)
                         res.mode.ccBindings.add (cb);
                     }
             }

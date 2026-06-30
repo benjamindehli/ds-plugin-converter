@@ -113,6 +113,8 @@ ConvertResult convertLibrary (const ConvertOptions& options)
     library.library = options.libraryName.isNotEmpty()
                           ? options.libraryName
                           : options.libraryDir.getFileName();
+    if (options.gainDb.has_value())
+        library.gainDb = *options.gainDb;
 
     juce::StringPairArray assets; // id -> library-relative path (deduped across modes)
 
@@ -145,12 +147,29 @@ ConvertResult convertLibrary (const ConvertOptions& options)
     // `length` values are unreliable). The audio itself is never trimmed or padded.
     juce::HashMap<juce::String, juce::int64> actualFrames;
 
-    // 3. Transcode assets → FLAC in the output dir.
+    // 3. Transcode assets → FLAC, sorted into subdirectories by kind so the repo
+    //    can .gitignore just the audio (samples/ + ir/) and commit images + manifest.
     if (auto dirResult = options.outDir.createDirectory(); dirResult.failed())
     {
         result.errors.add ("cannot create out dir: " + dirResult.getErrorMessage());
         return result;
     }
+
+    const auto samplesDir = options.outDir.getChildFile ("samples");
+    const auto irDir      = options.outDir.getChildFile ("ir");
+    const auto imagesDir  = options.outDir.getChildFile ("images");
+
+    // Clean stale generated assets (re-runs, and the old flat layout where audio +
+    // images sat directly in assets/). The manifest at the root is overwritten below.
+    for (auto& f : options.outDir.findChildFiles (juce::File::findFiles, false,
+                                                  "*.flac;*.png;*.jpg;*.jpeg"))
+        f.deleteFile();
+    samplesDir.deleteRecursively();
+    irDir.deleteRecursively();
+    imagesDir.deleteRecursively();
+    samplesDir.createDirectory();
+    irDir.createDirectory();
+    imagesDir.createDirectory();
 
     for (auto& id : assets.getAllKeys())
     {
@@ -163,15 +182,15 @@ ConvertResult convertLibrary (const ConvertOptions& options)
         }
 
         // Images (UI assets) are embedded verbatim, keeping their filename; audio
-        // is transcoded to FLAC.
+        // (samples and IRs) is transcoded to FLAC. Each kind goes in its own subdir.
         if (id.startsWith ("img:"))
         {
-            const auto dst = options.outDir.getChildFile (src.getFileName());
+            const auto dst = imagesDir.getChildFile (src.getFileName());
             dst.deleteFile();
             if (src.copyFileTo (dst))
             {
                 ++result.assetsTranscoded;
-                result.log.add ("img   " + dst.getFileName());
+                result.log.add ("img   images/" + dst.getFileName());
             }
             else
             {
@@ -180,13 +199,14 @@ ConvertResult convertLibrary (const ConvertOptions& options)
             continue;
         }
 
-        const auto dst = options.outDir.getChildFile (flacFileNameForId (id));
+        const bool isIr = id.startsWith ("ir:");
+        const auto dst = (isIr ? irDir : samplesDir).getChildFile (flacFileNameForId (id));
         juce::int64 frames = 0;
         juce::String formatNote, error;
         if (transcodeToFlac (src, dst, frames, formatNote, error))
         {
             ++result.assetsTranscoded;
-            result.log.add ("flac  " + dst.getFileName());
+            result.log.add ((isIr ? "ir    ir/" : "flac  samples/") + dst.getFileName());
 
             if (formatNote.isNotEmpty())
                 result.warnings.add (formatNote);
@@ -292,6 +312,25 @@ ConvertResult convertLibrary (const ConvertOptions& options)
         if (n > 0)
             result.log.add ("reverb wet gain " + juce::String (*options.reverbGainDb, 1)
                             + " dB applied to " + juce::String (n) + " convolution effect(s)");
+    }
+
+    if (options.gainDb.has_value())
+        result.log.add ("library pre-FX gain trim: " + juce::String (*options.gainDb, 1) + " dB");
+
+    if (! options.normalizeIr)
+    {
+        int n = 0;
+        for (int mi = 0; mi < library.modes.size(); ++mi)
+        {
+            auto& m = library.modes.getReference (mi);
+            for (int ei = 0; ei < m.effects.size(); ++ei)
+            {
+                auto& e = m.effects.getReference (ei);
+                if (e.type == "convolution") { e.normalizeIr = false; ++n; }
+            }
+        }
+        if (n > 0)
+            result.log.add ("IR normalisation OFF for " + juce::String (n) + " convolution effect(s)");
     }
 
     // Shift UI element y so manifest coordinates are background-relative (the
