@@ -48,6 +48,58 @@ public:
         testLoopValidation();
         testImageEmbedding();
         testUiYOffset();
+        testSplitManifestOutput();
+    }
+
+    void testSplitManifestOutput()
+    {
+        beginTest ("split manifest/ folder is the sole manifest output and round-trips");
+
+        auto root = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                        .getChildFile ("dmse_converter_split_test");
+        root.deleteRecursively();
+        root.createDirectory();
+
+        auto libDir = root.getChildFile ("lib");
+        auto outDir = root.getChildFile ("out");
+        writeSilentWav (libDir.getChildFile ("Samples/a.wav"), 1000);
+
+        // Two presets → two modes, exercising per-mode file splitting + the index list.
+        const juce::String preset (R"(<?xml version="1.0"?>
+<DecentSampler>
+  <groups attack="0" decay="0" sustain="1" release="0.1">
+    <group><sample path="Samples/a.wav" loNote="60" hiNote="60" rootNote="60" length="1000" sampleRate="48000"/></group>
+  </groups>
+</DecentSampler>)");
+        libDir.getChildFile ("Bass.dspreset").replaceWithText (preset);
+        libDir.getChildFile ("Keys.dspreset").replaceWithText (preset);
+
+        dmconv::ConvertOptions opts;
+        opts.libraryDir  = libDir;
+        opts.outDir      = outDir;
+        opts.libraryName = "TestLib";
+
+        auto result = dmconv::convertLibrary (opts);
+        expect (result.ok, "conversion should succeed: " + result.errors.joinIntoString ("; "));
+
+        auto manifestDir = outDir.getChildFile ("manifest");
+        expect (manifestDir.getChildFile ("index.json").existsAsFile(), "index.json written");
+        expectEquals (manifestDir.getChildFile ("modes")
+                          .getNumberOfChildFiles (juce::File::findFiles, "*.json"),
+                      2, "one file per mode");
+
+        // Split-only output: no single manifest.json is written any more.
+        expect (! outDir.getChildFile ("manifest.json").existsAsFile(), "no single manifest.json emitted");
+
+        // The split folder reloads into a full 2-mode library.
+        auto split = dm::loadManifestFromFolder (manifestDir);
+        expect (split.ok, "split manifest reloads: " + split.errors.joinIntoString ("; "));
+        expectEquals (split.library.modes.size(), 2);
+        for (const auto& m : split.library.modes)
+            expect (! m.groups.isEmpty() && ! m.groups.getReference (0).samples.isEmpty(),
+                    "each mode carries its samples through the split round-trip");
+
+        root.deleteRecursively();
     }
 
     void testUiYOffset()
@@ -82,8 +134,7 @@ public:
         auto result = dmconv::convertLibrary (opts);
         expect (result.ok, result.errors.joinIntoString ("; "));
 
-        auto reloaded = dm::loadManifestFromJson (
-            outDir.getChildFile ("manifest.json").loadFileAsString());
+        auto reloaded = dm::loadManifestFromFolder (outDir.getChildFile ("manifest"));
         expect (reloaded.ok);
         const auto& tab = reloaded.library.modes.getReference (0).ui.tabs.getReference (0);
         expectEquals (tab.controls.size(), 1);
@@ -126,16 +177,15 @@ public:
         auto result = dmconv::convertLibrary (opts);
         expect (result.ok, "conversion should succeed: " + result.errors.joinIntoString ("; "));
 
-        expect (outDir.getChildFile ("bg.png").existsAsFile(), "image copied verbatim");
-        expect (! outDir.getChildFile ("bg.flac").existsAsFile(), "image must not be transcoded");
-        expect (outDir.getChildFile ("a.flac").existsAsFile(), "audio still transcoded");
+        expect (outDir.getChildFile ("images/bg.png").existsAsFile(), "image copied verbatim");
+        expect (! outDir.getChildFile ("images/bg.flac").existsAsFile(), "image must not be transcoded");
+        expect (outDir.getChildFile ("samples/a.flac").existsAsFile(), "audio still transcoded");
 
         // Byte-for-byte identical (no modification).
-        expectEquals (outDir.getChildFile ("bg.png").loadFileAsString(),
+        expectEquals (outDir.getChildFile ("images/bg.png").loadFileAsString(),
                       juce::String ("not-really-a-png-but-bytes"));
 
-        auto reloaded = dm::loadManifestFromJson (
-            outDir.getChildFile ("manifest.json").loadFileAsString());
+        auto reloaded = dm::loadManifestFromFolder (outDir.getChildFile ("manifest"));
         expect (reloaded.ok);
         expectEquals (reloaded.library.modes.getReference (0).ui.background, juce::String ("img:bg"));
     }
@@ -175,9 +225,10 @@ public:
 
         expect (result.ok, "conversion should succeed: " + result.errors.joinIntoString ("; "));
         expectEquals (result.assetsTranscoded, 2);
-        expect (outDir.getChildFile ("manifest.json").existsAsFile());
-        expect (outDir.getChildFile ("a.flac").existsAsFile(), "matching file still transcoded");
-        expect (outDir.getChildFile ("b.flac").existsAsFile(), "mismatching file still transcoded");
+        expect (outDir.getChildFile ("manifest/index.json").existsAsFile(), "split manifest written");
+        expect (! outDir.getChildFile ("manifest.json").existsAsFile(), "no single manifest.json emitted");
+        expect (outDir.getChildFile ("samples/a.flac").existsAsFile(), "matching file still transcoded");
+        expect (outDir.getChildFile ("samples/b.flac").existsAsFile(), "mismatching file still transcoded");
 
         // b's declared length (999) disagrees with its real length (500) → summarised.
         expect (anyWarningContains (result.warnings, "b.flac"), "expected the override example to cite b.flac");
@@ -187,8 +238,7 @@ public:
                 "matching file should not appear in the override summary");
 
         // The manifest now carries the ACTUAL decoded lengths, not the .dspreset's.
-        auto reloaded = dm::loadManifestFromJson (
-            outDir.getChildFile ("manifest.json").loadFileAsString());
+        auto reloaded = dm::loadManifestFromFolder (outDir.getChildFile ("manifest"));
         expect (reloaded.ok, "generated manifest should reload");
         int lenA = -1, lenB = -1;
         for (const auto& g : reloaded.library.modes.getReference (0).groups)
@@ -240,8 +290,7 @@ public:
         auto result = dmconv::convertLibrary (opts);
         expect (result.ok, "conversion should succeed: " + result.errors.joinIntoString ("; "));
 
-        auto reloaded = dm::loadManifestFromJson (
-            outDir.getChildFile ("manifest.json").loadFileAsString());
+        auto reloaded = dm::loadManifestFromFolder (outDir.getChildFile ("manifest"));
         expect (reloaded.ok, "generated manifest should reload");
 
         const auto& effects = reloaded.library.modes.getReference (0).effects;
@@ -300,8 +349,7 @@ public:
         auto result = dmconv::convertLibrary (opts);
         expect (result.ok, "conversion should succeed: " + result.errors.joinIntoString ("; "));
 
-        auto reloaded = dm::loadManifestFromJson (
-            outDir.getChildFile ("manifest.json").loadFileAsString());
+        auto reloaded = dm::loadManifestFromFolder (outDir.getChildFile ("manifest"));
         expect (reloaded.ok);
 
         bool checkedLong = false, checkedShort = false;

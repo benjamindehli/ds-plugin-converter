@@ -349,11 +349,18 @@ ConvertResult convertLibrary (const ConvertOptions& options)
             }
         }
 
-    // 4. Write the manifest.
-    result.manifestFile = options.outDir.getChildFile ("manifest.json");
-    const auto json = dm::writeManifestToJson (library);
-    if (! result.manifestFile.replaceWithText (json))
-        result.errors.add ("cannot write manifest: " + result.manifestFile.getFullPathName());
+    // 4. Write the manifest as a SPLIT folder (index.json + modes/<name>.json +
+    //    optional partials/) — this is what the plugins embed and load, and it's
+    //    readable / diffable / hand-editable. No single manifest.json is written;
+    //    the engine's single-file loader still exists (tests / API), but the
+    //    converter's output is split-only.
+    const auto manifestDir = options.outDir.getChildFile ("manifest");
+    result.manifestFile = manifestDir.getChildFile ("index.json");
+    if (! dm::writeSplitManifest (library, manifestDir))
+        result.errors.add ("cannot write manifest folder: " + manifestDir.getFullPathName());
+
+    // Drop any stale single manifest.json left by an older converter run.
+    options.outDir.getChildFile ("manifest.json").deleteFile();
 
     result.modes = library.modes.size();
     result.ok = result.errors.isEmpty();
