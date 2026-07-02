@@ -109,13 +109,20 @@ dm::Binding parseBinding (const XmlElement& e, ParseResult& res)
     b.bindingIndex = optI (e, "bindingIndex");
     b.seqIndex     = optI (e, "seqIndex");
     b.position     = optI (e, "position");
+    // DecentSampler references a specific modulator (LFO) with `modulatorIndex` on
+    // control/button bindings; carry it as the binding's position so the engine can
+    // address that modulator (e.g. a hi-fi/lo-fi switch setting each modulator's depth).
+    if (! b.position)
+        b.position = optI (e, "modulatorIndex");
 
     if (e.hasAttribute ("translationValue"))
         b.translationValue = parseTranslationValue (res, e.getStringAttribute ("translationValue"));
 
     // DecentSampler `position` is the 0-based index within the binding's level —
     // normalise it to the explicit index the engine resolves against, so the rest
-    // of the pipeline only deals with groupIndex/effectIndex/controlIndex.
+    // of the pipeline only deals with groupIndex/effectIndex/controlIndex. (A
+    // modulatorIndex-sourced position on a type="modulator" binding is left in
+    // `position` — none of these levels match — for the engine's LFO routing.)
     if (b.position)
     {
         if (b.level == "group" && ! b.groupIndex)        b.groupIndex   = b.position;
