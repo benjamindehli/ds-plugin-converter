@@ -349,6 +349,15 @@ ConvertResult convertLibrary (const ConvertOptions& options)
             }
         }
 
+    // Per-mode top crop (engine applies it: trims the background top, shrinks height,
+    // shifts elements up). Keyed by mode name; cropTopDefault covers the rest.
+    for (int mi = 0; mi < library.modes.size(); ++mi)
+    {
+        auto& mode = library.modes.getReference (mi);
+        const auto it = options.cropTopByMode.find (mode.name);
+        mode.ui.cropTop = (it != options.cropTopByMode.end()) ? it->second : options.cropTopDefault;
+    }
+
     // 4. Write the manifest as a SPLIT folder (index.json + modes/<name>.json +
     //    optional partials/) — this is what the plugins embed and load, and it's
     //    readable / diffable / hand-editable. No single manifest.json is written;

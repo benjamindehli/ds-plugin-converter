@@ -8,6 +8,7 @@
 
 #include <juce_core/juce_core.h>
 #include <optional>
+#include <map>
 
 namespace dmconv
 {
@@ -39,6 +40,14 @@ struct ConvertOptions
     // but our renderer doesn't draw. ~50 in the half-scaled UI logical space
     // (the menu bar is ~100 px in the 2× background image).
     int uiYOffset = 50;
+
+    // Per-mode top crop (design px) written to each mode's `ui.cropTop`: the engine
+    // trims that much off the top of the background, shrinks the UI, and shifts every
+    // element up (reclaims the dead menu-bar header where it isn't wanted). Keyed by
+    // mode name (= preset filename stem); `cropTopDefault` applies to any mode not
+    // listed. From `--crop-top` (e.g. "60" or "60,Split=0").
+    int cropTopDefault = 0;
+    std::map<juce::String, int> cropTopByMode;
 };
 
 struct ConvertResult
