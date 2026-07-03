@@ -251,6 +251,9 @@ dm::Effect parseEffect (const XmlElement& e, ParseResult& res)
     fx.mix         = optD (e, "mix");
     fx.wet         = optD (e, "wetLevel");
     fx.outputLevel = optD (e, "outputLevel");
+    fx.rate        = optD (e, "modRate");    // chorus
+    fx.depth       = optD (e, "modDepth");   // chorus
+    fx.feedback    = optD (e, "feedback");   // chorus
 
     // `gain` effect carries its amount in "level".
     if (fx.type == "gain")
@@ -319,6 +322,7 @@ dm::Control parseControl (const XmlElement& e, ParseResult& res)
     c.textColor = e.getStringAttribute ("textColor");
     c.style     = e.getStringAttribute ("style");
     c.mouseDragSensitivity = optD (e, "mouseDragSensitivity");
+    c.visible   = e.getBoolAttribute ("visible", true);
 
     if (e.hasAttribute ("customSkinImage"))
     {
@@ -341,6 +345,7 @@ dm::Button parseButton (const XmlElement& e, ParseResult& res)
     b.rect  = parseRect (e);
     b.style = e.getStringAttribute ("style");
     b.value = optI (e, "value");
+    b.visible = e.getBoolAttribute ("visible", true);
 
     for (auto* s : e.getChildIterator())
         if (s->hasTagName ("state"))
@@ -364,6 +369,7 @@ dm::UiImage parseImage (const XmlElement& e, ParseResult& res)
     img.rect            = parseRect (e);
     img.image           = registerImage (res, e.getStringAttribute ("path"));
     img.aspectRatioMode = e.getStringAttribute ("aspectRatioMode");
+    img.visible         = e.getBoolAttribute ("visible", true);
     return img;
 }
 
@@ -372,6 +378,7 @@ dm::Menu parseMenu (const XmlElement& e, ParseResult& res)
     dm::Menu m;
     m.rect  = parseRect (e);
     m.value = e.getIntAttribute ("value", 1);
+    m.visible = e.getBoolAttribute ("visible", true);
     m.textColor       = e.getStringAttribute ("textColor");
     m.backgroundColor = e.getStringAttribute ("backgroundColor");
     m.hAlign          = e.getStringAttribute ("hAlign");
@@ -410,11 +417,25 @@ void parseUiChildren (const XmlElement& parent, dm::Tab& tab, ParseResult& res,
                       std::set<int>& menuIndices)
 {
     int uiIndex = 0;
+    std::map<juce::String, int> labelSeen;   // de-duplicate control labels within this tab
     for (auto* node : parent.getChildIterator())
     {
         if (node->hasTagName ("control"))
         {
             auto c = parseControl (*node, res);
+            c.controlIndex = uiIndex;   // document-order index (VISIBLE/OPACITY binding target)
+
+            // Per-control params are keyed by label, so two controls sharing a label
+            // in the same mode would collapse to ONE param and move together (e.g.
+            // EDB-Orgel has a hidden vibrato helper mislabelled the same as a visible
+            // velocity knob). Give the 2nd+ occurrence a distinct label → its own param.
+            if (c.label.isNotEmpty())
+            {
+                const int n = ++labelSeen[c.label];
+                if (n > 1)
+                    c.label = c.label + " (" + juce::String (n) + ")";
+            }
+
             if (! c.bindings.isEmpty())   // record target so <cc>/<note> controlIndex can resolve it
             {
                 UiControlTarget t;
@@ -427,9 +448,9 @@ void parseUiChildren (const XmlElement& parent, dm::Tab& tab, ParseResult& res,
             tab.controls.add (c);
             ++uiIndex;
         }
-        else if (node->hasTagName ("button"))  { tab.buttons.add  (parseButton  (*node, res)); ++uiIndex; }
+        else if (node->hasTagName ("button"))  { auto b = parseButton (*node, res); b.controlIndex = uiIndex; tab.buttons.add (b); ++uiIndex; }
         else if (node->hasTagName ("image"))   { auto im = parseImage (*node, res); im.controlIndex = uiIndex++; tab.images.add (im); }
-        else if (node->hasTagName ("menu"))    { menuIndices.insert (uiIndex); tab.menus.add (parseMenu (*node, res)); ++uiIndex; }
+        else if (node->hasTagName ("menu"))    { auto m = parseMenu (*node, res); m.controlIndex = uiIndex; menuIndices.insert (uiIndex); tab.menus.add (m); ++uiIndex; }
     }
 }
 
@@ -599,9 +620,10 @@ ParseResult parseDspreset (const juce::String& xmlText, const juce::String& mode
                         const double outMin = b->getDoubleAttribute ("translationOutputMin", tgt.min);
                         const double outMax = b->getDoubleAttribute ("translationOutputMax", tgt.max);
                         dm::CcBinding cb;
-                        cb.cc         = ccNum;
-                        cb.parameter  = tgt.parameter;
-                        cb.groupIndex = tgt.groupIndex;
+                        cb.cc           = ccNum;
+                        cb.parameter    = tgt.parameter;
+                        cb.groupIndex   = tgt.groupIndex;
+                        cb.controlIndex = *ci;   // the specific target → drive only this control
                         cb.normMin    = (span != 0.0) ? (outMin - tgt.min) / span : 0.0;
                         cb.normMax    = (span != 0.0) ? (outMax - tgt.min) / span : 1.0;
                         if (b->getBoolAttribute ("translationReversed", false))
