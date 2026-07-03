@@ -356,6 +356,18 @@ ConvertResult convertLibrary (const ConvertOptions& options)
         auto& mode = library.modes.getReference (mi);
         const auto it = options.cropTopByMode.find (mode.name);
         mode.ui.cropTop = (it != options.cropTopByMode.end()) ? it->second : options.cropTopDefault;
+
+        // Keyboard-colour override (config only): replace the parsed colours for this
+        // mode. Per-mode entry wins; else the default list (if any) applies.
+        const auto kit = options.keyboardColorsByMode.find (mode.name);
+        if (kit != options.keyboardColorsByMode.end() || options.haveKeyboardDefault)
+        {
+            const auto& colors = (kit != options.keyboardColorsByMode.end()) ? kit->second
+                                                                             : options.keyboardColorsDefault;
+            mode.ui.keyboardColors.clearQuick();
+            for (const auto& kc : colors)
+                mode.ui.keyboardColors.add (kc);
+        }
     }
 
     // 4. Write the manifest as a SPLIT folder (index.json + modes/<name>.json +

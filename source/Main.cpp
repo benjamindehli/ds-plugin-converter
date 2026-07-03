@@ -25,6 +25,22 @@ juce::File resolvePath (const juce::String& arg)
 //     "uiYOffset": 50, "cropTop": { "default": 60, "Split": 0 } }
 // CLI flags applied afterwards override these. Returns false if the file is absent
 // (fine — config is optional) or malformed (reported by the caller).
+std::vector<dm::KeyboardColor> parseKeyboardColors (const juce::var& arr)
+{
+    std::vector<dm::KeyboardColor> out;
+    if (auto* a = arr.getArray())
+        for (const auto& e : *a)
+            if (auto* o = e.getDynamicObject())
+            {
+                dm::KeyboardColor kc;
+                kc.loNote = (int) o->getProperty ("loNote");
+                kc.hiNote = o->hasProperty ("hiNote") ? (int) o->getProperty ("hiNote") : 127;
+                kc.color  = o->getProperty ("color").toString();
+                out.push_back (kc);
+            }
+    return out;
+}
+
 bool applyConfigFile (const juce::File& cfg, dmconv::ConvertOptions& opts, juce::String& error)
 {
     if (! cfg.existsAsFile())
@@ -56,6 +72,27 @@ bool applyConfigFile (const juce::File& cfg, dmconv::ConvertOptions& opts, juce:
     }
     else if (! crop.isVoid())                         // scalar → default for all modes
         opts.cropTopDefault = (int) crop;
+
+    const auto kb = o->getProperty ("keyboardColors");
+    if (kb.isArray())                                 // flat array → applies to every mode
+    {
+        opts.keyboardColorsDefault = parseKeyboardColors (kb);
+        opts.haveKeyboardDefault   = true;
+    }
+    else if (auto* kbo = kb.getDynamicObject())       // { "default": [...], "ModeName": [...] }
+    {
+        for (const auto& p : kbo->getProperties())
+        {
+            const auto key = p.name.toString();
+            if (key == "*" || key == "default")
+            {
+                opts.keyboardColorsDefault = parseKeyboardColors (p.value);
+                opts.haveKeyboardDefault   = true;
+            }
+            else
+                opts.keyboardColorsByMode[key] = parseKeyboardColors (p.value);
+        }
+    }
 
     return true;
 }

@@ -7,8 +7,10 @@
 // output dir, and writes the manifest JSON via the engine's ManifestWriter.
 
 #include <juce_core/juce_core.h>
+#include <model/Manifest.h>
 #include <optional>
 #include <map>
+#include <vector>
 
 namespace dmconv
 {
@@ -48,6 +50,15 @@ struct ConvertOptions
     // listed. From `--crop-top` (e.g. "60" or "60,Split=0").
     int cropTopDefault = 0;
     std::map<juce::String, int> cropTopByMode;
+
+    // Keyboard-colour override (config only — DecentSampler ignores the config file, so
+    // its preset's `<keyboard>` is untouched). When present for a mode, REPLACES that
+    // mode's parsed keyboard colours. `keyboardColorsDefault` (with haveKeyboardDefault)
+    // applies to any mode not in `keyboardColorsByMode`. From dmse-convert.json's
+    // "keyboardColors" (a flat array = all modes, or { "default"/"ModeName": [...] }).
+    bool haveKeyboardDefault = false;
+    std::vector<dm::KeyboardColor> keyboardColorsDefault;
+    std::map<juce::String, std::vector<dm::KeyboardColor>> keyboardColorsByMode;
 };
 
 struct ConvertResult
