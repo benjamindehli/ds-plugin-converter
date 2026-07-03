@@ -652,6 +652,113 @@ ParseResult parseDspreset (const juce::String& xmlText, const juce::String& mode
             }
         }
 
+    // --- ID-based bindings (Phase 1: instrument effects) --------------------
+    // Assign each instrument effect a stable, readable id ("fx_<type>[_n]"), then
+    // rewrite every UI binding that targets one by index into an id reference
+    // (targetId). The engine resolves targetId → slot at load; the effectIndex is
+    // still emitted as a transition fallback.
+    {
+        std::map<juce::String, int> typeCount;
+        for (auto& e : res.mode.effects)
+        {
+            const int n = ++typeCount[e.type];
+            e.id = "fx_" + (e.type.isNotEmpty() ? e.type : juce::String ("effect"))
+                 + (n > 1 ? "_" + juce::String (n) : juce::String());
+        }
+
+        // Phase 2: groups. Every group gets a stable uid (kept if the preset already
+        // set one, else generated). A group binding — group-level params AND group-effect
+        // bindings (which keep effectIndex as the slot within that group's chain) — is
+        // rewritten to reference the group by uid.
+        int gn = 0;
+        for (auto& g : res.mode.groups)
+        {
+            if (g.uid.isEmpty())
+                g.uid = "grp_" + juce::String (gn);
+            ++gn;
+        }
+
+        // Phase 3: modulators (LFOs). Each gets a stable id; MOD_AMOUNT/FREQUENCY
+        // bindings (which target a modulator via position = DecentSampler modulatorIndex)
+        // are rewritten to reference it by id.
+        int mn = 0;
+        for (auto& m : res.mode.modulators)
+            m.id = "mod_" + juce::String (mn++);
+
+        auto resolveEffectTarget = [&res] (dm::Binding& b)
+        {
+            if (b.targetId.isNotEmpty() || b.level == "group")   // group effects → resolveGroupTarget
+                return;
+            if (b.effectIndex && *b.effectIndex >= 0 && *b.effectIndex < res.mode.effects.size())
+                b.targetId = res.mode.effects.getReference (*b.effectIndex).id;
+        };
+        auto resolveGroupTarget = [&res] (dm::Binding& b)
+        {
+            if (b.targetId.isNotEmpty())   // already an effect target (Phase 1) or resolved
+                return;
+            if (b.groupIndex && *b.groupIndex >= 0 && *b.groupIndex < res.mode.groups.size())
+                b.targetId = res.mode.groups.getReference (*b.groupIndex).uid;
+        };
+        auto resolveModulatorTarget = [&res] (dm::Binding& b)
+        {
+            if (b.targetId.isNotEmpty())
+                return;
+            if ((b.parameter == "MOD_AMOUNT" || b.parameter == "FREQUENCY")
+                && b.position && *b.position >= 0 && *b.position < res.mode.modulators.size())
+                b.targetId = res.mode.modulators.getReference (*b.position).id;
+        };
+        auto resolve = [&] (dm::Binding& b)
+        {
+            resolveEffectTarget (b);
+            resolveGroupTarget (b);
+            resolveModulatorTarget (b);
+        };
+
+        for (auto& tab : res.mode.ui.tabs)
+        {
+            for (auto& c : tab.controls) for (auto& b : c.bindings) resolve (b);
+            for (auto& bt : tab.buttons)  for (auto& st : bt.states)  for (auto& b : st.bindings) resolve (b);
+            for (auto& mn : tab.menus)    for (auto& op : mn.options)  for (auto& b : op.bindings) resolve (b);
+        }
+        for (auto& lfo : res.mode.modulators)   // tremolo/tuning modulators target groups by uid
+            for (auto& b : lfo.bindings)
+                resolveGroupTarget (b);
+
+        // Phase 4: UI elements. Each control/button/menu/image gets a stable id; bindings
+        // that target one by controlIndex — PATH (light image swap), VISIBLE/OPACITY, and
+        // VALUE (button/menu cross-refs) — plus the mode's <cc> bindings are rewritten to
+        // reference the target by id. Ids are per-tab (controlIndex is per-tab doc order).
+        for (auto& tab : res.mode.ui.tabs)
+        {
+            std::map<int, juce::String> ciToId;
+            int cn = 0, bn = 0, mnn = 0, imn = 0;
+            for (auto& c  : tab.controls) { c.id  = "ctl_"  + juce::String (cn++);  if (c.controlIndex)  ciToId[*c.controlIndex]  = c.id; }
+            for (auto& bt : tab.buttons)  { bt.id = "btn_"  + juce::String (bn++);  if (bt.controlIndex) ciToId[*bt.controlIndex] = bt.id; }
+            for (auto& mn : tab.menus)    { mn.id = "menu_" + juce::String (mnn++); if (mn.controlIndex) ciToId[*mn.controlIndex] = mn.id; }
+            for (auto& im : tab.images)   { im.id = "img_"  + juce::String (imn++); if (im.controlIndex) ciToId[*im.controlIndex] = im.id; }
+
+            auto resolveUiTarget = [&ciToId] (dm::Binding& b)
+            {
+                if (b.targetId.isNotEmpty() || ! b.controlIndex)
+                    return;
+                if (b.parameter != "PATH" && b.parameter != "VISIBLE"
+                    && b.parameter != "OPACITY" && b.parameter != "VALUE")
+                    return;
+                if (auto it = ciToId.find (*b.controlIndex); it != ciToId.end())
+                    b.targetId = it->second;
+            };
+            for (auto& c  : tab.controls) for (auto& b : c.bindings) resolveUiTarget (b);
+            for (auto& bt : tab.buttons)  for (auto& st : bt.states)  for (auto& b : st.bindings) resolveUiTarget (b);
+            for (auto& mn : tab.menus)    for (auto& op : mn.options)  for (auto& b : op.bindings) resolveUiTarget (b);
+
+            // <cc> bindings are mode-level but target controls in this tab.
+            for (auto& cb : res.mode.ccBindings)
+                if (cb.targetId.isEmpty() && cb.controlIndex)
+                    if (auto it = ciToId.find (*cb.controlIndex); it != ciToId.end())
+                        cb.targetId = it->second;
+        }
+    }
+
     res.ok = res.errors.isEmpty() && ! res.mode.groups.isEmpty();
     return res;
 }
