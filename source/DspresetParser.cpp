@@ -167,6 +167,12 @@ dm::Sample parseSample (const XmlElement& e, ParseResult& res)
     s.lengthFrames  = optI (e, "length");
     s.sampleRate    = optD (e, "sampleRate");
     s.pitchKeyTrack = toBool (e.getStringAttribute ("pitchKeyTrack", "0"));
+    // A FRACTIONAL pitchKeyTrack (0<x<1) is used by string-machine libraries as a
+    // per-sample pitch-DRIFT depth (bass drifts less than treble), not key-tracking.
+    // (Samples are one-per-note, so real key-tracking is moot here.)
+    if (const double pkt = e.getStringAttribute ("pitchKeyTrack").getDoubleValue();
+        pkt > 0.0 && pkt < 1.0)
+        s.pitchDrift = pkt;
 
     s.start       = optI (e, "start");
     s.end         = optI (e, "end");
