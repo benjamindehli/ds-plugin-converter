@@ -57,6 +57,7 @@ bool applyConfigFile (const juce::File& cfg, dmconv::ConvertOptions& opts, juce:
     if (o->hasProperty ("gain"))        opts.gainDb       = (double) o->getProperty ("gain");
     if (o->hasProperty ("reverbGain"))  opts.reverbGainDb = (double) o->getProperty ("reverbGain");
     if (o->hasProperty ("normalizeIr")) opts.normalizeIr  = (bool)   o->getProperty ("normalizeIr");
+    if (o->hasProperty ("packSamples")) opts.packSamples  = (bool)   o->getProperty ("packSamples");
     if (o->hasProperty ("uiYOffset"))   opts.uiYOffset    = (int)    o->getProperty ("uiYOffset");
 
     const auto crop = o->getProperty ("cropTop");
@@ -104,6 +105,7 @@ int main (int argc, char* argv[])
     std::optional<double> reverbGainDb;
     std::optional<double> gainDb;
     std::optional<bool> normalizeIr;
+    std::optional<bool> packSamples;
     std::optional<int> uiYOffset;
     juce::String cropTopSpec;
     juce::String configArg;
@@ -117,6 +119,8 @@ int main (int argc, char* argv[])
             gainDb = juce::String::fromUTF8 (argv[++i]).getDoubleValue();
         else if (arg == "--no-normalize-ir")
             normalizeIr = false;
+        else if (arg == "--pack-samples")
+            packSamples = true;
         else if (arg == "--ui-y-offset" && i + 1 < argc)
             uiYOffset = juce::String::fromUTF8 (argv[++i]).getIntValue();
         else if (arg == "--crop-top" && i + 1 < argc)
@@ -135,6 +139,9 @@ int main (int argc, char* argv[])
                   << "  --reverb-gain <dB>   trim every convolution wet (e.g. 12 for Omni-84).\n"
                   << "  --gain <dB>          library-wide pre-FX level trim (e.g. -10 for Midnight Wurli).\n"
                   << "  --no-normalize-ir    use convolution IRs as recorded (like DS; for cabinet IRs).\n"
+                  << "  --pack-samples       concatenate sample FLACs into samples/samples.pak (+ .json\n"
+                  << "                       index) for disk memory-mapping, instead of individual files\n"
+                  << "                       compiled into the binary. For multi-GB libraries.\n"
                   << "  --ui-y-offset <px>   shift UI elements down (default 100; menu-bar offset).\n"
                   << "  --crop-top <spec>    trim dead header space per mode. <spec> is comma-separated:\n"
                   << "                       a bare number = default for all modes; NAME=px overrides one\n"
@@ -164,6 +171,7 @@ int main (int argc, char* argv[])
     if (reverbGainDb.has_value()) opts.reverbGainDb = reverbGainDb;
     if (gainDb.has_value())       opts.gainDb       = gainDb;
     if (normalizeIr.has_value())  opts.normalizeIr  = *normalizeIr;
+    if (packSamples.has_value())  opts.packSamples  = *packSamples;
     if (uiYOffset.has_value())    opts.uiYOffset    = *uiYOffset;
 
     // --crop-top spec REPLACES the config's crop: bare number = default for all modes;

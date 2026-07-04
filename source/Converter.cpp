@@ -171,6 +171,22 @@ ConvertResult convertLibrary (const ConvertOptions& options)
     irDir.createDirectory();
     imagesDir.createDirectory();
 
+    // Sample pack (--pack-samples): concatenate every sample FLAC into one file the
+    // plugin memory-maps, plus a JSON index of [id, offset, length]. Avoids compiling a
+    // multi-GB library into the binary. IRs + images stay individual (small → embedded).
+    const bool packing = options.packSamples;
+    const auto packFile      = samplesDir.getChildFile ("samples.pak");
+    const auto packIndexFile = samplesDir.getChildFile ("samples.pak.json");
+    std::unique_ptr<juce::FileOutputStream> packOut;
+    juce::Array<juce::var> packEntries;
+    if (packing)
+    {
+        packFile.deleteFile();
+        packOut = packFile.createOutputStream();
+        if (packOut == nullptr || ! packOut->openedOk())
+            result.errors.add ("cannot open sample pack for writing: " + packFile.getFullPathName());
+    }
+
     for (auto& id : assets.getAllKeys())
     {
         const auto src = options.libraryDir.getChildFile (assets[id]);
@@ -200,6 +216,40 @@ ConvertResult convertLibrary (const ConvertOptions& options)
         }
 
         const bool isIr = id.startsWith ("ir:");
+
+        // Packed samples: transcode to a temp FLAC (proven path), append its bytes to the
+        // pack, and record the slice. IRs are never packed (they stay embedded).
+        if (packing && ! isIr && packOut != nullptr)
+        {
+            const auto tmp = samplesDir.getChildFile ("~pack_tmp.flac");
+            juce::int64 frames = 0;
+            juce::String formatNote, error;
+            if (transcodeToFlac (src, tmp, frames, formatNote, error))
+            {
+                juce::MemoryBlock mb;
+                if (tmp.loadFileAsData (mb))
+                {
+                    const juce::int64 offset = packOut->getPosition();
+                    packOut->write (mb.getData(), mb.getSize());
+                    auto* e = new juce::DynamicObject();
+                    e->setProperty ("id", id);
+                    e->setProperty ("o", offset);
+                    e->setProperty ("l", (juce::int64) mb.getSize());
+                    packEntries.add (juce::var (e));
+                    ++result.assetsTranscoded;
+                    actualFrames.set (id, frames);
+                }
+                else
+                    result.errors.add ("cannot read temp FLAC for packing: " + id);
+                if (formatNote.isNotEmpty())
+                    result.warnings.add (formatNote);
+                tmp.deleteFile();
+            }
+            else
+                result.errors.add (error);
+            continue;
+        }
+
         const auto dst = (isIr ? irDir : samplesDir).getChildFile (flacFileNameForId (id));
         juce::int64 frames = 0;
         juce::String formatNote, error;
@@ -217,6 +267,16 @@ ConvertResult convertLibrary (const ConvertOptions& options)
         {
             result.errors.add (error);
         }
+    }
+
+    // Finalise the pack: flush the data and write the index next to it.
+    if (packing && packOut != nullptr)
+    {
+        packOut->flush();
+        packOut.reset();
+        packIndexFile.replaceWithText (juce::JSON::toString (juce::var (packEntries)));
+        result.log.add ("pack  samples/samples.pak (" + juce::String (packEntries.size())
+                        + " samples) + samples.pak.json");
     }
 
     // Make the decoded audio length authoritative in the manifest. We note — never
