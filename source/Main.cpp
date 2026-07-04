@@ -58,6 +58,8 @@ bool applyConfigFile (const juce::File& cfg, dmconv::ConvertOptions& opts, juce:
     if (o->hasProperty ("reverbGain"))  opts.reverbGainDb = (double) o->getProperty ("reverbGain");
     if (o->hasProperty ("normalizeIr")) opts.normalizeIr  = (bool)   o->getProperty ("normalizeIr");
     if (o->hasProperty ("packSamples")) opts.packSamples  = (bool)   o->getProperty ("packSamples");
+    if (o->hasProperty ("whiteKeyTint")) opts.whiteKeyTint = o->getProperty ("whiteKeyTint").toString();
+    if (o->hasProperty ("blackKeyTint")) opts.blackKeyTint = o->getProperty ("blackKeyTint").toString();
     if (o->hasProperty ("uiYOffset"))   opts.uiYOffset    = (int)    o->getProperty ("uiYOffset");
 
     const auto crop = o->getProperty ("cropTop");

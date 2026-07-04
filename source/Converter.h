@@ -66,6 +66,12 @@ struct ConvertOptions
     bool haveKeyboardDefault = false;
     std::vector<dm::KeyboardColor> keyboardColorsDefault;
     std::map<juce::String, std::vector<dm::KeyboardColor>> keyboardColorsByMode;
+
+    // Global per-key-type keyboard tint (ARGB hex; alpha = strength), applied to every
+    // mode. Overlaid on ALL white / black keys — e.g. whiteKeyTint "30ffcc00" = subtle
+    // yellow on white keys only. From dmse-convert.json "whiteKeyTint"/"blackKeyTint".
+    juce::String whiteKeyTint;
+    juce::String blackKeyTint;
 };
 
 struct ConvertResult

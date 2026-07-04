@@ -428,6 +428,10 @@ ConvertResult convertLibrary (const ConvertOptions& options)
             for (const auto& kc : colors)
                 mode.ui.keyboardColors.add (kc);
         }
+
+        // Global per-key-type tint (config only): applies to every mode.
+        mode.ui.whiteKeyTint = options.whiteKeyTint;
+        mode.ui.blackKeyTint = options.blackKeyTint;
     }
 
     // 4. Write the manifest as a SPLIT folder (index.json + modes/<name>.json +
