@@ -218,7 +218,9 @@ dm::Group parseGroup (const XmlElement& e, ParseResult& res)
         g.silencing = s;
     }
 
+    g.attack        = optD (e, "attack");
     g.decay         = optD (e, "decay");
+    g.sustain       = optD (e, "sustain");
     g.release       = optD (e, "release");
     g.volume        = optD (e, "volume");
     g.velTrack      = optD (e, "ampVelTrack");
