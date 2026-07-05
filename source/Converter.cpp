@@ -71,6 +71,150 @@ bool transcodeToFlac (const juce::File& wav, const juce::File& outFlac,
         error = "FLAC encode failed for " + outFlac.getFullPathName();
     return ok;
 }
+
+// Remove groups carrying a drop tag (e.g. VCCO's "A2" — a DecentSampler duplicate of "A"
+// used only to double the level when double-track is off) and every binding targeting them.
+// To preserve loudness, boost the `boostTag` groups ×2 in the double-track button's OFF state
+// (they were being summed with the now-removed duplicate). Also auto-link the stereo button
+// (all-PAN) to switch the double-track button on, so stereo is never a no-op mono. Per-mode +
+// pattern-detected, so modes without the structure (e.g. the Lite preset) are left untouched.
+void applyGroupDrops (dm::PresetLibrary& library, const ConvertOptions& options)
+{
+    if (options.dropGroupTags.isEmpty())
+        return;
+
+    auto hasDropTag = [&] (const dm::Group& g)
+    {
+        for (const auto& t : g.tags)
+            if (options.dropGroupTags.contains (t))
+                return true;
+        return false;
+    };
+    auto isTrue = [] (const juce::var& v)
+    {
+        if (v.isBool()) return (bool) v;
+        const auto s = v.toString();
+        return s.equalsIgnoreCase ("true") || s.getFloatValue() > 0.5f;
+    };
+
+    for (auto& mode : library.modes)
+    {
+        juce::StringArray droppedUids;
+        for (const auto& g : mode.groups)
+            if (hasDropTag (g))
+                droppedUids.add (g.uid);
+        if (droppedUids.isEmpty() || mode.ui.tabs.isEmpty())
+            continue;   // this mode doesn't have the structure (e.g. Lite) → leave it alone
+
+        auto& tab = mode.ui.tabs.getReference (0);
+
+        // Detect the double-track button (toggles ENABLED on a dropped group) + its OFF
+        // state (the one that enables a dropped group), and the stereo button (all-PAN) + its
+        // ON state (a non-zero PAN).
+        int dtBtn = -1, dtOffState = -1, dtOnState = -1, stereoBtn = -1, stereoOnState = -1;
+        for (int bi = 0; bi < tab.buttons.size(); ++bi)
+        {
+            const auto& btn = tab.buttons.getReference (bi);
+            bool togglesDropped = false, allPan = ! btn.states.isEmpty();
+            for (const auto& st : btn.states)
+                for (const auto& b : st.bindings)
+                {
+                    if (b.parameter != "PAN") allPan = false;
+                    if (b.parameter == "ENABLED" && droppedUids.contains (b.targetId)) togglesDropped = true;
+                }
+
+            if (togglesDropped && dtBtn < 0)
+            {
+                dtBtn = bi;
+                for (int si = 0; si < btn.states.size(); ++si)
+                    for (const auto& b : btn.states.getReference (si).bindings)
+                        if (b.parameter == "ENABLED" && droppedUids.contains (b.targetId) && isTrue (b.translationValue))
+                            dtOffState = si;
+                for (int si = 0; si < btn.states.size(); ++si)
+                    if (si != dtOffState) dtOnState = si;
+            }
+            if (allPan && stereoBtn < 0)
+            {
+                stereoBtn = bi;
+                for (int si = 0; si < btn.states.size(); ++si)
+                    for (const auto& b : btn.states.getReference (si).bindings)
+                        if (b.parameter == "PAN" && b.translationValue.toString().getIntValue() != 0)
+                            stereoOnState = si;
+            }
+        }
+        int stereoOffState = -1;
+        if (stereoBtn >= 0)
+            for (int si = 0; si < tab.buttons.getReference (stereoBtn).states.size(); ++si)
+                if (si != stereoOnState) stereoOffState = si;
+
+        // Remove bindings targeting dropped groups (buttons + menus), then drop the groups.
+        auto stripBindings = [&] (juce::Array<dm::Binding>& binds)
+        {
+            for (int i = binds.size() - 1; i >= 0; --i)
+                if (droppedUids.contains (binds.getReference (i).targetId))
+                    binds.remove (i);
+        };
+        for (auto& btn : tab.buttons)
+            for (auto& st : btn.states)
+                stripBindings (st.bindings);
+        for (auto& menu : tab.menus)
+            for (auto& opt : menu.options)
+                stripBindings (opt.bindings);
+        for (int i = mode.groups.size() - 1; i >= 0; --i)
+            if (hasDropTag (mode.groups.getReference (i)))
+                mode.groups.remove (i);
+
+        // Loudness compensation: boost the always-on base groups ×2 in the DT OFF state
+        // (they lose the coherent duplicate), ×1 in the ON state.
+        if (dtBtn >= 0 && dtOffState >= 0 && dtOnState >= 0 && options.doubleTrackBoostTag.isNotEmpty())
+        {
+            auto& btn = tab.buttons.getReference (dtBtn);
+            auto addVol = [&] (int stateIdx, const char* value)
+            {
+                for (const auto& g : mode.groups)
+                    if (g.tags.contains (options.doubleTrackBoostTag))
+                    {
+                        dm::Binding b;
+                        b.type = "amp"; b.level = "group"; b.targetId = g.uid;
+                        b.parameter = "AMP_VOLUME"; b.translation = "fixed_value";
+                        b.translationValue = juce::var (juce::String (value));
+                        btn.states.getReference (stateIdx).bindings.add (b);
+                    }
+            };
+            addVol (dtOffState, "2");
+            addVol (dtOnState,  "1");
+        }
+
+        // Stereo level compensation: hard-panning leaves one track per channel (~6 dB
+        // quieter than both centred). Boost the instrument level in the stereo ON state
+        // (setMasterVolume — independent of the per-group DT comp), reset to 1 in OFF.
+        if (stereoBtn >= 0 && stereoOnState >= 0 && stereoOffState >= 0)
+        {
+            auto& btn = tab.buttons.getReference (stereoBtn);
+            auto addMaster = [&] (int stateIdx, const juce::String& value)
+            {
+                dm::Binding b;
+                b.type = "amp"; b.level = "instrument";
+                b.parameter = "AMP_VOLUME"; b.translation = "fixed_value";
+                b.translationValue = juce::var (value);
+                btn.states.getReference (stateIdx).bindings.add (b);
+            };
+            addMaster (stereoOnState,  juce::String (options.doubleTrackStereoBoost));
+            addMaster (stereoOffState, "1");
+        }
+
+        // Keep the invariant "stereo ⟹ double-track": turning stereo on enables double-
+        // track, and turning double-track off disables stereo (so stereo never pans a
+        // disabled track to one side).
+        if (stereoBtn >= 0 && dtBtn >= 0)
+        {
+            if (stereoOnState >= 0 && dtOnState >= 0)
+                mode.ui.buttonLinks.add ({ stereoBtn, stereoOnState, dtBtn, dtOnState });
+            if (dtOffState >= 0 && stereoOffState >= 0)
+                mode.ui.buttonLinks.add ({ dtBtn, dtOffState, stereoBtn, stereoOffState });
+        }
+    }
+}
 } // namespace
 
 ConvertResult convertLibrary (const ConvertOptions& options)
@@ -433,6 +577,10 @@ ConvertResult convertLibrary (const ConvertOptions& options)
         mode.ui.whiteKeyTint = options.whiteKeyTint;
         mode.ui.blackKeyTint = options.blackKeyTint;
     }
+
+    // Drop DecentSampler duplicate groups (e.g. A2), compensate loudness, and auto-link
+    // stereo → double-track. No-op unless dropGroupTags is set.
+    applyGroupDrops (library, options);
 
     // 4. Write the manifest as a SPLIT folder (index.json + modes/<name>.json +
     //    optional partials/) — this is what the plugins embed and load, and it's

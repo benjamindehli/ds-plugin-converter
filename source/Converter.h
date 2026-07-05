@@ -72,6 +72,23 @@ struct ConvertOptions
     // yellow on white keys only. From dmse-convert.json "whiteKeyTint"/"blackKeyTint".
     juce::String whiteKeyTint;
     juce::String blackKeyTint;
+
+    // Drop groups carrying any of these tags + all bindings targeting them. Used to remove
+    // DecentSampler workaround duplicates (e.g. VCCO's "A2" = a copy of "A" for the double-
+    // track-off state). From dmse-convert.json "dropGroupTags".
+    juce::StringArray dropGroupTags;
+
+    // When dropGroupTags removes a coherent duplicate (A2), the double-track-off state loses
+    // its level-doubling. Boost groups with THIS tag ×2 in the double-track button's OFF
+    // state (and ×1 in ON) to preserve the loudness. Also auto-links the stereo button (all-
+    // PAN) to turn the double-track button on. From "doubleTrackBoostTag".
+    juce::String doubleTrackBoostTag;
+
+    // Stereo level compensation: hard-panning the two tracks L/R leaves one track per channel
+    // (~6 dB quieter than both centred). The stereo button's ON state multiplies the instrument
+    // level by this to compensate; ON=off leaves it at 1. Tune by ear. From
+    // "doubleTrackStereoBoost" (default 2.0 = +6 dB).
+    double doubleTrackStereoBoost = 2.0;
 };
 
 struct ConvertResult

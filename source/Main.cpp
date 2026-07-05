@@ -60,6 +60,10 @@ bool applyConfigFile (const juce::File& cfg, dmconv::ConvertOptions& opts, juce:
     if (o->hasProperty ("packSamples")) opts.packSamples  = (bool)   o->getProperty ("packSamples");
     if (o->hasProperty ("whiteKeyTint")) opts.whiteKeyTint = o->getProperty ("whiteKeyTint").toString();
     if (o->hasProperty ("blackKeyTint")) opts.blackKeyTint = o->getProperty ("blackKeyTint").toString();
+    if (auto* dt = o->getProperty ("dropGroupTags").getArray())
+        for (const auto& t : *dt) opts.dropGroupTags.add (t.toString());
+    if (o->hasProperty ("doubleTrackBoostTag")) opts.doubleTrackBoostTag = o->getProperty ("doubleTrackBoostTag").toString();
+    if (o->hasProperty ("doubleTrackStereoBoost")) opts.doubleTrackStereoBoost = (double) o->getProperty ("doubleTrackStereoBoost");
     if (o->hasProperty ("uiYOffset"))   opts.uiYOffset    = (int)    o->getProperty ("uiYOffset");
 
     const auto crop = o->getProperty ("cropTop");
