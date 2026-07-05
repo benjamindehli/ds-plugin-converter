@@ -127,6 +127,8 @@ int main (int argc, char* argv[])
             normalizeIr = false;
         else if (arg == "--pack-samples")
             packSamples = true;
+        else if (arg == "--no-pack-samples")
+            packSamples = false;
         else if (arg == "--ui-y-offset" && i + 1 < argc)
             uiYOffset = juce::String::fromUTF8 (argv[++i]).getIntValue();
         else if (arg == "--crop-top" && i + 1 < argc)
@@ -145,9 +147,10 @@ int main (int argc, char* argv[])
                   << "  --reverb-gain <dB>   trim every convolution wet (e.g. 12 for Omni-84).\n"
                   << "  --gain <dB>          library-wide pre-FX level trim (e.g. -10 for Midnight Wurli).\n"
                   << "  --no-normalize-ir    use convolution IRs as recorded (like DS; for cabinet IRs).\n"
-                  << "  --pack-samples       concatenate sample FLACs into samples/samples.pak (+ .json\n"
-                  << "                       index) for disk memory-mapping, instead of individual files\n"
-                  << "                       compiled into the binary. For multi-GB libraries.\n"
+                  << "  --no-pack-samples    embed sample FLACs in the binary instead of the default\n"
+                  << "                       disk pack (samples/samples.pak + .json index that the plugin\n"
+                  << "                       memory-maps). Packing is ON by default (small binary, fast\n"
+                  << "                       launch); use this to make a fully self-contained build.\n"
                   << "  --ui-y-offset <px>   shift UI elements down (default 100; menu-bar offset).\n"
                   << "  --crop-top <spec>    trim dead header space per mode. <spec> is comma-separated:\n"
                   << "                       a bare number = default for all modes; NAME=px overrides one\n"

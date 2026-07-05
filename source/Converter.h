@@ -37,12 +37,12 @@ struct ConvertOptions
     // cabinet IRs (normalising attenuates them ~14 dB). Per-library, hence opt-out.
     bool normalizeIr = true;
 
-    // When true, sample FLACs are concatenated into a single pack (samples/samples.pak +
-    // samples.pak.json index) instead of individual files, so the plugin memory-maps them
-    // from disk rather than compiling them into the binary. For multi-GB libraries, this
-    // avoids a huge executable (slow launch, high RAM). IRs + images stay individual
-    // (small → embedded). Per-library, hence opt-in.
-    bool packSamples = false;
+    // When true (default), sample FLACs are concatenated into a single pack
+    // (samples/samples.pak + samples.pak.json index) instead of individual files, so the
+    // plugin memory-maps them from disk rather than compiling them into the binary — small
+    // binaries, fast launch, low RAM, no per-format duplication. IRs + images stay
+    // individual (small → embedded). Opt out with --no-pack-samples / "packSamples": false.
+    bool packSamples = true;
 
     // Added to every UI element's y so manifest coords are background-relative:
     // DecentSampler positions controls below its menu bar that the bg image spans
