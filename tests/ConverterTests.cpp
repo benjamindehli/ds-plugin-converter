@@ -49,6 +49,7 @@ public:
         testImageEmbedding();
         testUiYOffset();
         testSplitManifestOutput();
+        testSamplePack();
     }
 
     void testSplitManifestOutput()
@@ -75,6 +76,7 @@ public:
         libDir.getChildFile ("Keys.dspreset").replaceWithText (preset);
 
         dmconv::ConvertOptions opts;
+        opts.packSamples = false;   // these tests assert on loose per-sample FLACs
         opts.libraryDir  = libDir;
         opts.outDir      = outDir;
         opts.libraryName = "TestLib";
@@ -127,6 +129,7 @@ public:
 </DecentSampler>)");
 
         dmconv::ConvertOptions opts;
+        opts.packSamples = false;   // these tests assert on loose per-sample FLACs
         opts.libraryDir = libDir;
         opts.outDir     = outDir;
         // opts.uiYOffset defaults to 100
@@ -170,6 +173,7 @@ public:
 </DecentSampler>)");
 
         dmconv::ConvertOptions opts;
+        opts.packSamples = false;   // these tests assert on loose per-sample FLACs
         opts.libraryDir  = libDir;
         opts.outDir      = outDir;
         opts.libraryName = "TestLib";
@@ -217,6 +221,7 @@ public:
 </DecentSampler>)");
 
         dmconv::ConvertOptions opts;
+        opts.packSamples = false;   // these tests assert on loose per-sample FLACs
         opts.libraryDir = libDir;
         opts.outDir     = outDir;
         opts.libraryName = "TestLib";
@@ -282,6 +287,7 @@ public:
 </DecentSampler>)");
 
         dmconv::ConvertOptions opts;
+        opts.packSamples = false;   // these tests assert on loose per-sample FLACs
         opts.libraryDir   = libDir;
         opts.outDir       = outDir;
         opts.libraryName  = "TestLib";
@@ -342,6 +348,7 @@ public:
 </DecentSampler>)");
 
         dmconv::ConvertOptions opts;
+        opts.packSamples = false;   // these tests assert on loose per-sample FLACs
         opts.libraryDir  = libDir;
         opts.outDir      = outDir;
         opts.libraryName = "TestLib";
@@ -372,6 +379,60 @@ public:
 
         root.deleteRecursively();
     }
+
+    void testSamplePack()
+    {
+        beginTest ("default pack mode emits samples.pak + index instead of loose FLACs");
+
+        auto root = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                        .getChildFile ("dmse_converter_pack_test");
+        root.deleteRecursively();
+        root.createDirectory();
+
+        auto libDir = root.getChildFile ("lib");
+        auto outDir = root.getChildFile ("out");
+        writeSilentWav (libDir.getChildFile ("Samples/a.wav"), 1000);
+
+        libDir.getChildFile ("Kit.dspreset").replaceWithText (R"(<?xml version="1.0"?>
+<DecentSampler>
+  <groups attack="0" decay="0" sustain="1" release="0.1">
+    <group>
+      <sample path="Samples/a.wav" loNote="60" hiNote="60" rootNote="60" length="1000" sampleRate="48000"/>
+    </group>
+  </groups>
+</DecentSampler>)");
+
+        dmconv::ConvertOptions opts;   // packSamples defaults TRUE — that is the point
+        opts.libraryDir = libDir;
+        opts.outDir     = outDir;
+
+        auto result = dmconv::convertLibrary (opts);
+        expect (result.ok, "pack conversion should succeed: " + result.errors.joinIntoString ("; "));
+
+        expect (! outDir.getChildFile ("samples/a.flac").existsAsFile(),
+                "packed mode must not leave loose sample FLACs");
+        expect (outDir.getChildFile ("samples/samples.pak").existsAsFile(), "pack written");
+        expect (outDir.getChildFile ("samples/samples.pak.json").existsAsFile(), "pack index written");
+
+        juce::var idx;
+        expect (juce::JSON::parse (outDir.getChildFile ("samples/samples.pak.json").loadFileAsString(),
+                                   idx).wasOk(), "pack index parses");
+        auto* entries = idx.getArray();
+        expect (entries != nullptr && entries->size() == 1, "one pack entry");
+        if (entries != nullptr && ! entries->isEmpty())
+        {
+            const auto& e = entries->getReference (0);
+            expectEquals (e.getProperty ("id", "").toString(), juce::String ("flac:a"));
+            const int off = (int) e.getProperty ("o", -1);
+            const int len = (int) e.getProperty ("l", -1);
+            expect (off >= 0 && len > 0, "entry has offset+length");
+            expect ((juce::int64) (off + len) <= outDir.getChildFile ("samples/samples.pak").getSize(),
+                    "entry fits inside the pack");
+        }
+
+        root.deleteRecursively();
+    }
+
 };
 
 ConverterTests converterTests;

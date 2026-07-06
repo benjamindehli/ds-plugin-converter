@@ -209,9 +209,9 @@ void applyGroupDrops (dm::PresetLibrary& library, const ConvertOptions& options)
         if (stereoBtn >= 0 && dtBtn >= 0)
         {
             if (stereoOnState >= 0 && dtOnState >= 0)
-                mode.ui.buttonLinks.add ({ stereoBtn, stereoOnState, dtBtn, dtOnState });
+                mode.ui.buttonLinks.add ({ stereoBtn, stereoOnState, dtBtn, dtOnState, {}, {} });
             if (dtOffState >= 0 && stereoOffState >= 0)
-                mode.ui.buttonLinks.add ({ dtBtn, dtOffState, stereoBtn, stereoOffState });
+                mode.ui.buttonLinks.add ({ dtBtn, dtOffState, stereoBtn, stereoOffState, {}, {} });
         }
     }
 }
