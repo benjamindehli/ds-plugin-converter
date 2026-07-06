@@ -32,6 +32,10 @@ struct ConvertOptions
     // same signal level DecentSampler feeds it (our voice sum runs hotter than DS).
     std::optional<double> gainDb;
 
+    // Default for the Poly-save toggle (skip silent groups at note-on). Set false for
+    // libraries whose controls blend muted groups in mid-note (config "polySaveDefault").
+    bool polySaveDefault = true;
+
     // When false, convolution IRs are used as recorded (Normalise::no) instead of
     // energy-normalised — matches DecentSampler, which doesn't normalise. Needed for
     // cabinet IRs (normalising attenuates them ~14 dB). Per-library, hence opt-out.

@@ -259,6 +259,7 @@ ConvertResult convertLibrary (const ConvertOptions& options)
                           : options.libraryDir.getFileName();
     if (options.gainDb.has_value())
         library.gainDb = *options.gainDb;
+    library.polySaveDefault = options.polySaveDefault;
 
     juce::StringPairArray assets; // id -> library-relative path (deduped across modes)
 
