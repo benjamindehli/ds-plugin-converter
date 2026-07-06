@@ -41,10 +41,18 @@ std::vector<dm::KeyboardColor> parseKeyboardColors (const juce::var& arr)
     return out;
 }
 
-bool applyConfigFile (const juce::File& cfg, dmconv::ConvertOptions& opts, juce::String& error)
+bool applyConfigFile (const juce::File& cfg, dmconv::ConvertOptions& opts, juce::String& error,
+                      bool required)
 {
     if (! cfg.existsAsFile())
-        return true;   // no config is fine
+    {
+        // Auto-discovered <library-dir>/dmse-convert.json is optional; an EXPLICIT
+        // --config that doesn't exist is an error (a typo'd path used to silently
+        // convert with defaults and still report OK).
+        if (required)
+            error = "config file not found: " + cfg.getFullPathName();
+        return ! required;
+    }
 
     juce::var v;
     if (juce::JSON::parse (cfg.loadFileAsString(), v).failed() || ! v.isObject())
@@ -102,6 +110,22 @@ bool applyConfigFile (const juce::File& cfg, dmconv::ConvertOptions& opts, juce:
         }
     }
 
+    // A typo'd recipe key ("reverbgain") is otherwise a silent no-op.
+    static const char* knownKeys[] = { "gain", "reverbGain", "normalizeIr", "packSamples",
+                                       "polySaveDefault", "whiteKeyTint", "blackKeyTint",
+                                       "dropGroupTags", "doubleTrackBoostTag",
+                                       "doubleTrackStereoBoost", "uiYOffset", "cropTop",
+                                       "keyboardColors" };
+    for (const auto& p : o->getProperties())
+    {
+        bool known = false;
+        for (const auto* k : knownKeys)
+            if (p.name.toString() == k) { known = true; break; }
+        if (! known)
+            std::cout << "warning: " << cfg.getFileName() << ": unknown config key \""
+                      << p.name.toString() << "\" - ignored (typo?)\n";
+    }
+
     return true;
 }
 }
@@ -136,6 +160,15 @@ int main (int argc, char* argv[])
             cropTopSpec = juce::String::fromUTF8 (argv[++i]);
         else if (arg == "--config" && i + 1 < argc)
             configArg = juce::String::fromUTF8 (argv[++i]);
+        else if (arg.startsWith ("--"))
+        {
+            // Unknown flags used to fall through into the PRESET FILTER, silently
+            // converting nothing (or the wrong subset). Same for a value flag as the
+            // last argument (its i+1<argc check fails).
+            std::cout << "error: unknown or incomplete option \"" << arg
+                      << "\" (see usage: run with no arguments)\n";
+            return 2;
+        }
         else
             positional.add (arg);
     }
@@ -152,7 +185,7 @@ int main (int argc, char* argv[])
                   << "                       disk pack (samples/samples.pak + .json index that the plugin\n"
                   << "                       memory-maps). Packing is ON by default (small binary, fast\n"
                   << "                       launch); use this to make a fully self-contained build.\n"
-                  << "  --ui-y-offset <px>   shift UI elements down (default 100; menu-bar offset).\n"
+                  << "  --ui-y-offset <px>   shift UI elements down (default 50; menu-bar offset).\n"
                   << "  --crop-top <spec>    trim dead header space per mode. <spec> is comma-separated:\n"
                   << "                       a bare number = default for all modes; NAME=px overrides one\n"
                   << "                       mode (preset name). e.g. --crop-top \"60,Split=0\".\n"
@@ -171,7 +204,8 @@ int main (int argc, char* argv[])
     // <library-dir>/dmse-convert.json. Provides defaults; CLI flags below override.
     const juce::File configFile = configArg.isNotEmpty() ? resolvePath (configArg)
                                                          : opts.libraryDir.getChildFile ("dmse-convert.json");
-    if (juce::String cfgError; ! applyConfigFile (configFile, opts, cfgError))
+    if (juce::String cfgError; ! applyConfigFile (configFile, opts, cfgError,
+                                                  /*required*/ configArg.isNotEmpty()))
     {
         std::cout << "error: " << cfgError << "\n";
         return 2;
