@@ -57,6 +57,30 @@ std::optional<bool> optB (const XmlElement& e, juce::StringRef n)
     return e.hasAttribute (n) ? std::optional<bool> (toBool (e.getStringAttribute (n))) : std::nullopt;
 }
 
+// Register an asset id → source path. Asset ids are keyed on the file-name STEM, so
+// two DIFFERENT files sharing a basename (e.g. Samples/A/Hit.wav and Samples/B/Hit.wav)
+// would silently collapse into one id — every reference to the first then plays/shows
+// the wrong asset. That's guaranteed corruption, so a conflicting re-registration is
+// an ERROR (the first path is kept).
+void registerAsset (ParseResult& res, const juce::String& id, const juce::String& path)
+{
+    auto normalise = [] (const juce::String& p)
+    {
+        auto n = p.replaceCharacter ('\\', '/');
+        while (n.startsWith ("./"))
+            n = n.substring (2);
+        return n;
+    };
+    const auto existing = res.assets.getValue (id, {});
+    if (existing.isNotEmpty() && normalise (existing) != normalise (path))
+    {
+        res.errors.add ("asset id collision: '" + id + "' refers to both \"" + existing
+                        + "\" and \"" + path + "\" — rename one file (ids key on the basename)");
+        return;
+    }
+    res.assets.set (id, path);
+}
+
 // Register an image asset (bg, knob skin, button state, light, PATH swap). Stored
 // in the asset table with an "img:" id; the converter copies these verbatim
 // (no transcode). Returns the asset id, or "" for an empty path.
@@ -65,7 +89,7 @@ juce::String registerImage (ParseResult& res, const juce::String& path)
     if (path.isEmpty())
         return {};
     const auto id = "img:" + stem (path);
-    res.assets.set (id, path);
+    registerAsset (res, id, path);
     return id;
 }
 
@@ -79,7 +103,7 @@ juce::var parseTranslationValue (ParseResult& res, const juce::String& s)
     {
         // FX_IR_FILE swap (menu option or button state) → register + use the asset id.
         const auto id = "ir:" + stem (s);
-        res.assets.set (id, s);
+        registerAsset (res, id, s);
         return juce::var (id);
     }
     return juce::var (s);
@@ -158,7 +182,7 @@ dm::Sample parseSample (const XmlElement& e, ParseResult& res)
     const auto id = "flac:" + stem (path);
     s.source = id;
     if (path.isNotEmpty())
-        res.assets.set (id, path);
+        registerAsset (res, id, path);
 
     s.loNote   = e.getIntAttribute ("loNote", 0);
     s.hiNote   = e.getIntAttribute ("hiNote", 127);
@@ -272,7 +296,7 @@ dm::Effect parseEffect (const XmlElement& e, ParseResult& res)
         const auto ir = e.getStringAttribute ("irFile");
         const auto id = "ir:" + stem (ir);
         fx.ir = id;
-        res.assets.set (id, ir);
+        registerAsset (res, id, ir);
     }
     return fx;
 }
@@ -767,7 +791,13 @@ ParseResult parseDspreset (const juce::String& xmlText, const juce::String& mode
         }
     }
 
-    res.ok = res.errors.isEmpty() && ! res.mode.groups.isEmpty();
+    // A groups-less preset renders no sound — say so explicitly. (Without this,
+    // ok=false with an EMPTY errors list made the converter skip the preset silently
+    // while still reporting the run as OK.)
+    if (res.errors.isEmpty() && res.mode.groups.isEmpty())
+        res.errors.add ("<groups> contains no <group> elements — preset would be silent");
+
+    res.ok = res.errors.isEmpty();
     return res;
 }
 

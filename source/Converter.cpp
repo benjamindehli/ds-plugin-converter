@@ -266,17 +266,30 @@ ConvertResult convertLibrary (const ConvertOptions& options)
     {
         const auto name = file.getFileNameWithoutExtension();
         auto parsed = dmconv::parseDspreset (file.loadFileAsString(), name);
+        for (auto& w : parsed.warnings)   // forward warnings even for a failed parse
+            result.warnings.add (name + ": " + w);
         if (! parsed.ok)
         {
             for (auto& e : parsed.errors)
                 result.errors.add (name + ": " + e);
+            result.errors.add (name + ": preset SKIPPED (not converted)");
             continue;
         }
-        for (auto& w : parsed.warnings)
-            result.warnings.add (name + ": " + w);
         library.modes.add (parsed.mode);
         for (auto& key : parsed.assets.getAllKeys())
-            assets.set (key, parsed.assets[key]);
+        {
+            // Same basename-keyed id space across ALL modes: two presets referencing
+            // different files with the same stem would make one of them play/show the
+            // wrong asset. Modes legitimately share files (that's the dedup), so only
+            // a DIFFERENT path for an existing id is an error.
+            const auto existing = assets.getValue (key, {});
+            if (existing.isNotEmpty() && existing != parsed.assets[key])
+                result.errors.add (name + ": asset id collision across presets: '" + key
+                                   + "' is \"" + existing + "\" elsewhere but \""
+                                   + parsed.assets[key] + "\" here — rename one file");
+            else
+                assets.set (key, parsed.assets[key]);
+        }
         result.log.add ("parsed " + name + " (" + juce::String (parsed.mode.groups.size()) + " groups)");
     }
 
