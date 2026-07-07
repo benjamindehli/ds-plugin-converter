@@ -300,6 +300,51 @@ ConvertResult convertLibrary (const ConvertOptions& options)
         return result;
     }
 
+    // Omnichord select+strum rewrite (config "omnichordStrum"): each chord-order
+    // key-switch becomes a strum key carrying its menu option's sequence-index
+    // offset, and clearing menuKeySwitches leaves the chord keys (sequenceTriggers)
+    // as pure selectors — the engine switches behaviour on strumKeys' presence.
+    // The chord-order dropdown is REMOVED from the UI (ordering now comes from
+    // which strum key is played), and keyboard labels are emitted so the GUI shows
+    // what the strum keys do and which chord type each key section selects.
+    if (options.omnichordStrum)
+        for (auto& mode : library.modes)
+        {
+            if (mode.menuKeySwitches.isEmpty() || mode.sequenceTriggers.isEmpty()
+                || mode.ui.tabs.isEmpty() || mode.ui.tabs.getReference (0).menus.isEmpty())
+                continue;
+            // First menu of the first tab = the chord-order menu (same structural
+            // rule the engine's key-switch → menu binding uses).
+            auto& menus = mode.ui.tabs.getReference (0).menus;
+            const auto menu = menus.getReference (0);   // copy — removed from the UI below
+            int ksIndex = 0;
+            for (const auto& ks : mode.menuKeySwitches)
+            {
+                if (ks.option < 0 || ks.option >= menu.options.size())
+                {
+                    result.warnings.add (mode.name + ": omnichordStrum: key-switch note "
+                                         + juce::String (ks.note) + " selects missing menu option "
+                                         + juce::String (ks.option + 1) + " — skipped");
+                    ++ksIndex;
+                    continue;
+                }
+                dm::StrumKey sk;
+                sk.note      = ks.note;
+                sk.seqOffset = menu.options.getReference (ks.option).seqIndex;
+                mode.strumKeys.add (sk);
+
+                // Caption over the strum key: recipe "strumKeyLabels" (short, fits a
+                // single key) or the menu option's name as a fallback.
+                dm::KeyboardLabel kl;
+                kl.loNote = kl.hiNote = ks.note;
+                kl.text = ksIndex < options.strumKeyLabels.size()
+                              ? options.strumKeyLabels[ksIndex]
+                              : menu.options.getReference (ks.option).name;
+                mode.ui.keyboardLabels.add (kl);
+                ++ksIndex;
+            }
+            mode.menuKeySwitches.clear();
+            menus.remove (0);   // inert now — ordering comes from the strum keys
     // The audio file is authoritative for length: we record each asset's actual
     // decoded frame count and write it into the manifest below (the .dspreset
     // `length` values are unreliable). The audio itself is never trimmed or padded.

@@ -50,6 +50,89 @@ public:
         testUiYOffset();
         testSplitManifestOutput();
         testSamplePack();
+        testOmnichordStrum();
+    }
+
+    void testOmnichordStrum()
+    {
+        beginTest ("omnichordStrum rewrites chord-order key-switches into strumKeys");
+
+        auto root = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                        .getChildFile ("dmse_converter_omnistrum_test");
+        root.deleteRecursively();
+        root.createDirectory();
+
+        auto libDir = root.getChildFile ("lib");
+        writeSilentWav (libDir.getChildFile ("Samples/a.wav"), 1000);
+
+        // A chord-order menu (options → SEQ_INDEX 0/1), two key-switches selecting
+        // those options, and one chord trigger key.
+        libDir.getChildFile ("Chords.dspreset").replaceWithText (R"(<?xml version="1.0"?>
+<DecentSampler>
+  <ui width="812" height="375">
+    <tab name="main">
+      <menu x="124" y="120" width="162" height="22" value="1">
+        <option name="Up"><binding type="note_binding" noteIndex="0" parameter="SEQ_INDEX" translation="fixed_value" translationValue="0"></binding></option>
+        <option name="Down"><binding type="note_binding" noteIndex="0" parameter="SEQ_INDEX" translation="fixed_value" translationValue="1"></binding></option>
+      </menu>
+    </tab>
+  </ui>
+  <groups attack="0" decay="0" sustain="1" release="0.1">
+    <group><sample path="Samples/a.wav" loNote="60" hiNote="60" rootNote="60" length="1000" sampleRate="48000"/></group>
+  </groups>
+  <noteSequences>
+    <sequence name="Up" length="1" rate="1"><note position="0" velocity="1" note="60" length="1"></note></sequence>
+    <sequence name="Down" length="1" rate="1"><note position="0" velocity="1" note="62" length="1"></note></sequence>
+  </noteSequences>
+  <midi>
+    <note note="24" enabled="true">
+      <binding type="control" level="ui" parameter="VALUE" controlIndex="0" translation="fixed_value" translationValue="1"></binding>
+    </note>
+    <note note="26" enabled="true">
+      <binding type="control" level="ui" parameter="VALUE" controlIndex="0" translation="fixed_value" translationValue="2"></binding>
+    </note>
+    <note note="36" swallowNotes="true" enabled="true">
+      <binding level="instrument" type="note_sequence" seqIndex="0" seqLoopMode="no_loop" seqTriggerBehavior="midi_key" seqTransposeWithRootNote="36" seqTrackMidiInputVelocity="1" seqPlaybackRate="10" enabled="true"></binding>
+    </note>
+  </midi>
+</DecentSampler>)");
+
+        dmconv::ConvertOptions opts;
+        opts.packSamples = false;
+        opts.libraryDir  = libDir;
+        opts.libraryName = "OmniTest";
+
+        // Default (off): key-switches stay key-switches, no strum keys.
+        {
+            opts.outDir = root.getChildFile ("out_plain");
+            auto result = dmconv::convertLibrary (opts);
+            expect (result.ok, "conversion should succeed: " + result.errors.joinIntoString ("; "));
+            auto m = dm::loadManifestFromFolder (opts.outDir.getChildFile ("manifest"));
+            expect (m.ok);
+            const auto& mode = m.library.modes.getReference (0);
+            expectEquals (mode.menuKeySwitches.size(), 2);
+            expectEquals (mode.strumKeys.size(), 0);
+        }
+
+        // omnichordStrum: key-switches become strum keys with their option's offset.
+        {
+            opts.omnichordStrum = true;
+            opts.outDir = root.getChildFile ("out_strum");
+            auto result = dmconv::convertLibrary (opts);
+            expect (result.ok, "conversion should succeed: " + result.errors.joinIntoString ("; "));
+            auto m = dm::loadManifestFromFolder (opts.outDir.getChildFile ("manifest"));
+            expect (m.ok);
+            const auto& mode = m.library.modes.getReference (0);
+            expectEquals (mode.menuKeySwitches.size(), 0, "key-switches consumed");
+            expectEquals (mode.sequenceTriggers.size(), 1, "chord triggers kept (as selectors)");
+            expectEquals (mode.strumKeys.size(), 2);
+            expectEquals (mode.strumKeys.getReference (0).note, 24);
+            expectEquals (mode.strumKeys.getReference (0).seqOffset, 0);
+            expectEquals (mode.strumKeys.getReference (1).note, 26);
+            expectEquals (mode.strumKeys.getReference (1).seqOffset, 1);
+        }
+
+        root.deleteRecursively();
     }
 
     void testSplitManifestOutput()

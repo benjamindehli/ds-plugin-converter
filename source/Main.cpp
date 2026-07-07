@@ -67,6 +67,7 @@ bool applyConfigFile (const juce::File& cfg, dmconv::ConvertOptions& opts, juce:
     if (o->hasProperty ("normalizeIr")) opts.normalizeIr  = (bool)   o->getProperty ("normalizeIr");
     if (o->hasProperty ("packSamples")) opts.packSamples  = (bool)   o->getProperty ("packSamples");
     if (o->hasProperty ("polySaveDefault")) opts.polySaveDefault = (bool) o->getProperty ("polySaveDefault");
+    if (o->hasProperty ("omnichordStrum")) opts.omnichordStrum = (bool) o->getProperty ("omnichordStrum");
     if (o->hasProperty ("whiteKeyTint")) opts.whiteKeyTint = o->getProperty ("whiteKeyTint").toString();
     if (o->hasProperty ("blackKeyTint")) opts.blackKeyTint = o->getProperty ("blackKeyTint").toString();
     if (auto* dt = o->getProperty ("dropGroupTags").getArray())

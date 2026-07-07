@@ -36,6 +36,15 @@ struct ConvertOptions
     // libraries whose controls blend muted groups in mid-note (config "polySaveDefault").
     bool polySaveDefault = true;
 
+    // Omnichord-style select+strum (config "omnichordStrum"): rewrite each mode's
+    // chord-order key-switches into `strumKeys` carrying their menu option's
+    // sequence-index offset. Chord keys then only SELECT the chord; the strum keys
+    // fire it in their note order, and a chord change morphs still-ringing notes.
+    // Also removes the (now inert) chord-order menu from the UI and emits
+    // keyboard labels: chord-type section names (derived from the sequence names)
+    // and per-strum-key captions.
+    bool omnichordStrum = false;
+
     // When false, convolution IRs are used as recorded (Normalise::no) instead of
     // energy-normalised — matches DecentSampler, which doesn't normalise. Needed for
     // cabinet IRs (normalising attenuates them ~14 dB). Per-library, hence opt-out.
