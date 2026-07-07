@@ -45,6 +45,11 @@ struct ConvertOptions
     // and per-strum-key captions.
     bool omnichordStrum = false;
 
+    // Captions for the strum keys, in key-switch order (config "strumKeyLabels",
+    // e.g. ["↑","↓","↑*","↓*"]). Empty / missing entries fall back to the menu
+    // option's name — usually too wide for a single key, hence this override.
+    juce::StringArray strumKeyLabels;
+
     // When false, convolution IRs are used as recorded (Normalise::no) instead of
     // energy-normalised — matches DecentSampler, which doesn't normalise. Needed for
     // cabinet IRs (normalising attenuates them ~14 dB). Per-library, hence opt-out.
@@ -79,6 +84,14 @@ struct ConvertOptions
     bool haveKeyboardDefault = false;
     std::vector<dm::KeyboardColor> keyboardColorsDefault;
     std::map<juce::String, std::vector<dm::KeyboardColor>> keyboardColorsByMode;
+
+    // Keyboard captions strip (config "keyboardLabels", same shape as
+    // "keyboardColors": flat array = default for every mode, or a
+    // { "default": [...], "ModeName": [...] } map). A per-mode entry REPLACES that
+    // mode's labels — including ones auto-derived by omnichordStrum.
+    bool haveKeyboardLabelsDefault = false;
+    std::vector<dm::KeyboardLabel> keyboardLabelsDefault;
+    std::map<juce::String, std::vector<dm::KeyboardLabel>> keyboardLabelsByMode;
 
     // Global per-key-type keyboard tint (ARGB hex; alpha = strength), applied to every
     // mode. Overlaid on ALL white / black keys — e.g. whiteKeyTint "30ffcc00" = subtle

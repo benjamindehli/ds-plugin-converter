@@ -41,6 +41,22 @@ std::vector<dm::KeyboardColor> parseKeyboardColors (const juce::var& arr)
     return out;
 }
 
+std::vector<dm::KeyboardLabel> parseKeyboardLabels (const juce::var& arr)
+{
+    std::vector<dm::KeyboardLabel> out;
+    if (auto* a = arr.getArray())
+        for (const auto& e : *a)
+            if (auto* o = e.getDynamicObject())
+            {
+                dm::KeyboardLabel kl;
+                kl.loNote = (int) o->getProperty ("loNote");
+                kl.hiNote = o->hasProperty ("hiNote") ? (int) o->getProperty ("hiNote") : 127;
+                kl.text   = o->getProperty ("text").toString();
+                out.push_back (kl);
+            }
+    return out;
+}
+
 bool applyConfigFile (const juce::File& cfg, dmconv::ConvertOptions& opts, juce::String& error,
                       bool required)
 {
@@ -68,6 +84,8 @@ bool applyConfigFile (const juce::File& cfg, dmconv::ConvertOptions& opts, juce:
     if (o->hasProperty ("packSamples")) opts.packSamples  = (bool)   o->getProperty ("packSamples");
     if (o->hasProperty ("polySaveDefault")) opts.polySaveDefault = (bool) o->getProperty ("polySaveDefault");
     if (o->hasProperty ("omnichordStrum")) opts.omnichordStrum = (bool) o->getProperty ("omnichordStrum");
+    if (auto* sl = o->getProperty ("strumKeyLabels").getArray())
+        for (const auto& s : *sl) opts.strumKeyLabels.add (s.toString());
     if (o->hasProperty ("whiteKeyTint")) opts.whiteKeyTint = o->getProperty ("whiteKeyTint").toString();
     if (o->hasProperty ("blackKeyTint")) opts.blackKeyTint = o->getProperty ("blackKeyTint").toString();
     if (auto* dt = o->getProperty ("dropGroupTags").getArray())
@@ -111,12 +129,34 @@ bool applyConfigFile (const juce::File& cfg, dmconv::ConvertOptions& opts, juce:
         }
     }
 
+    const auto kbl = o->getProperty ("keyboardLabels");
+    if (kbl.isArray())                                // flat array → applies to every mode
+    {
+        opts.keyboardLabelsDefault     = parseKeyboardLabels (kbl);
+        opts.haveKeyboardLabelsDefault = true;
+    }
+    else if (auto* kblo = kbl.getDynamicObject())     // { "default": [...], "ModeName": [...] }
+    {
+        for (const auto& p : kblo->getProperties())
+        {
+            const auto key = p.name.toString();
+            if (key == "*" || key == "default")
+            {
+                opts.keyboardLabelsDefault     = parseKeyboardLabels (p.value);
+                opts.haveKeyboardLabelsDefault = true;
+            }
+            else
+                opts.keyboardLabelsByMode[key] = parseKeyboardLabels (p.value);
+        }
+    }
+
     // A typo'd recipe key ("reverbgain") is otherwise a silent no-op.
     static const char* knownKeys[] = { "gain", "reverbGain", "normalizeIr", "packSamples",
-                                       "polySaveDefault", "whiteKeyTint", "blackKeyTint",
+                                       "polySaveDefault", "omnichordStrum", "strumKeyLabels",
+                                       "whiteKeyTint", "blackKeyTint",
                                        "dropGroupTags", "doubleTrackBoostTag",
                                        "doubleTrackStereoBoost", "uiYOffset", "cropTop",
-                                       "keyboardColors" };
+                                       "keyboardColors", "keyboardLabels" };
     for (const auto& p : o->getProperties())
     {
         bool known = false;

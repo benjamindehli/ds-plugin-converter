@@ -345,6 +345,47 @@ ConvertResult convertLibrary (const ConvertOptions& options)
             }
             mode.menuKeySwitches.clear();
             menus.remove (0);   // inert now — ordering comes from the strum keys
+
+            // Chord-type section labels: each trigger's sequence name minus its root
+            // note prefix ("C#Minor7" → "Minor7"); consecutive chord keys sharing the
+            // same remainder merge into one labelled range (e.g. 36–47 "Major").
+            auto chordType = [] (const juce::String& seqName)
+            {
+                if (seqName.isNotEmpty() && seqName[0] >= 'A' && seqName[0] <= 'G')
+                {
+                    int n = 1;
+                    if (seqName.length() > 1 && (seqName[1] == '#' || seqName[1] == 'b'))
+                        ++n;
+                    return seqName.substring (n);
+                }
+                return seqName;
+            };
+            dm::KeyboardLabel section;
+            section.loNote = -1;
+            for (const auto& t : mode.sequenceTriggers)
+            {
+                if (t.sequence < 0 || t.sequence >= mode.sequences.size())
+                    continue;
+                const auto type = chordType (mode.sequences.getReference (t.sequence).name);
+                if (section.loNote >= 0 && type == section.text && t.note == section.hiNote + 1)
+                {
+                    section.hiNote = t.note;   // extend the current run
+                    continue;
+                }
+                if (section.loNote >= 0)
+                    mode.ui.keyboardLabels.add (section);
+                section.loNote = section.hiNote = t.note;
+                section.text = type;
+            }
+            if (section.loNote >= 0)
+                mode.ui.keyboardLabels.add (section);
+
+            result.log.add (mode.name + ": omnichord select+strum ("
+                            + juce::String (mode.strumKeys.size()) + " strum keys, "
+                            + juce::String (mode.ui.keyboardLabels.size())
+                            + " keyboard labels, chord-order menu removed)");
+        }
+
     // The audio file is authoritative for length: we record each asset's actual
     // decoded frame count and write it into the manifest below (the .dspreset
     // `length` values are unreliable). The audio itself is never trimmed or padded.
@@ -630,6 +671,20 @@ ConvertResult convertLibrary (const ConvertOptions& options)
             mode.ui.keyboardColors.clearQuick();
             for (const auto& kc : colors)
                 mode.ui.keyboardColors.add (kc);
+        }
+
+        // Keyboard-captions override (config "keyboardLabels"): same semantics as the
+        // colours — a per-mode entry (or the default) REPLACES the mode's labels,
+        // including any auto-derived by omnichordStrum.
+        const auto lit = options.keyboardLabelsByMode.find (mode.name);
+        if (lit != options.keyboardLabelsByMode.end() || options.haveKeyboardLabelsDefault)
+        {
+            const auto& labels = (lit != options.keyboardLabelsByMode.end())
+                                     ? lit->second
+                                     : options.keyboardLabelsDefault;
+            mode.ui.keyboardLabels.clearQuick();
+            for (const auto& kl : labels)
+                mode.ui.keyboardLabels.add (kl);
         }
 
         // Global per-key-type tint (config only): applies to every mode.

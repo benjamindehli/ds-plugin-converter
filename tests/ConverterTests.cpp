@@ -102,8 +102,10 @@ public:
         opts.libraryDir  = libDir;
         opts.libraryName = "OmniTest";
 
-        // Default (off): key-switches stay key-switches, no strum keys.
+        // Default (off): key-switches stay key-switches, no strum keys. Recipe
+        // "keyboardLabels" still applies (per-mode captions, e.g. the chord modes).
         {
+            opts.keyboardLabelsByMode["Chords"] = { { 36, 47, "Major" }, { 48, 59, "Minor" } };
             opts.outDir = root.getChildFile ("out_plain");
             auto result = dmconv::convertLibrary (opts);
             expect (result.ok, "conversion should succeed: " + result.errors.joinIntoString ("; "));
@@ -112,11 +114,19 @@ public:
             const auto& mode = m.library.modes.getReference (0);
             expectEquals (mode.menuKeySwitches.size(), 2);
             expectEquals (mode.strumKeys.size(), 0);
+            expectEquals (mode.ui.keyboardLabels.size(), 2);
+            expectEquals (mode.ui.keyboardLabels.getReference (0).text, juce::String ("Major"));
+            expectEquals (mode.ui.keyboardLabels.getReference (1).hiNote, 59);
+            opts.keyboardLabelsByMode.clear();   // strum block below asserts the AUTO labels
         }
 
-        // omnichordStrum: key-switches become strum keys with their option's offset.
+        // omnichordStrum: key-switches become strum keys with their option's offset,
+        // the inert chord-order menu disappears, and keyboard labels are emitted
+        // (strum-key captions from the recipe override + option-name fallback, and
+        // a chord-type section from the sequence name).
         {
             opts.omnichordStrum = true;
+            opts.strumKeyLabels.add ("A");   // key 24 override; key 26 falls back to "Down"
             opts.outDir = root.getChildFile ("out_strum");
             auto result = dmconv::convertLibrary (opts);
             expect (result.ok, "conversion should succeed: " + result.errors.joinIntoString ("; "));
@@ -130,6 +140,17 @@ public:
             expectEquals (mode.strumKeys.getReference (0).seqOffset, 0);
             expectEquals (mode.strumKeys.getReference (1).note, 26);
             expectEquals (mode.strumKeys.getReference (1).seqOffset, 1);
+
+            expect (mode.ui.tabs.getReference (0).menus.isEmpty(), "chord-order menu removed");
+            const auto& labels = mode.ui.keyboardLabels;
+            expectEquals (labels.size(), 3);
+            expectEquals (labels.getReference (0).loNote, 24);
+            expectEquals (labels.getReference (0).text, juce::String ("A"));
+            expectEquals (labels.getReference (1).loNote, 26);
+            expectEquals (labels.getReference (1).text, juce::String ("Down"));
+            expectEquals (labels.getReference (2).loNote, 36);
+            expectEquals (labels.getReference (2).hiNote, 36);
+            expectEquals (labels.getReference (2).text, juce::String ("Up"));   // seq name, no root prefix to strip
         }
 
         root.deleteRecursively();

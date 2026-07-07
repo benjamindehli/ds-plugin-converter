@@ -656,8 +656,9 @@ ParseResult parseDspreset (const juce::String& xmlText, const juce::String& mode
                         cb.parameter    = tgt.parameter;
                         cb.groupIndex   = tgt.groupIndex;
                         cb.controlIndex = *ci;   // the specific target → drive only this control
-                        cb.normMin    = (span != 0.0) ? (outMin - tgt.min) / span : 0.0;
-                        cb.normMax    = (span != 0.0) ? (outMax - tgt.min) / span : 1.0;
+                        const bool hasSpan = ! juce::exactlyEqual (span, 0.0);
+                        cb.normMin    = hasSpan ? (outMin - tgt.min) / span : 0.0;
+                        cb.normMax    = hasSpan ? (outMax - tgt.min) / span : 1.0;
                         if (b->getBoolAttribute ("translationReversed", false))
                             std::swap (cb.normMin, cb.normMax);   // mod wheel inverted (e.g. Swell)
                         res.mode.ccBindings.add (cb);
@@ -713,9 +714,9 @@ ParseResult parseDspreset (const juce::String& xmlText, const juce::String& mode
         // Phase 3: modulators (LFOs). Each gets a stable id; MOD_AMOUNT/FREQUENCY
         // bindings (which target a modulator via position = DecentSampler modulatorIndex)
         // are rewritten to reference it by id.
-        int mn = 0;
+        int modCount = 0;
         for (auto& m : res.mode.modulators)
-            m.id = "mod_" + juce::String (mn++);
+            m.id = "mod_" + juce::String (modCount++);
 
         auto resolveEffectTarget = [&res] (dm::Binding& b)
         {
