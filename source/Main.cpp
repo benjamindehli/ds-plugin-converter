@@ -84,6 +84,16 @@ bool applyConfigFile (const juce::File& cfg, dmconv::ConvertOptions& opts, juce:
     if (o->hasProperty ("packSamples")) opts.packSamples  = (bool)   o->getProperty ("packSamples");
     if (o->hasProperty ("polySaveDefault")) opts.polySaveDefault = (bool) o->getProperty ("polySaveDefault");
     if (o->hasProperty ("omnichordStrum")) opts.omnichordStrum = (bool) o->getProperty ("omnichordStrum");
+    if (auto* air = o->getProperty ("airSupply").getDynamicObject())
+    {
+        dm::AirSupply a;
+        if (air->hasProperty ("volume"))     a.volume     = (double) air->getProperty ("volume");
+        if (air->hasProperty ("brightness")) a.brightness = (double) air->getProperty ("brightness");
+        if (air->hasProperty ("attack"))     a.attack     = (double) air->getProperty ("attack");
+        if (auto* tags = air->getProperty ("tags").getArray())
+            for (const auto& t : *tags) a.tags.add (t.toString());
+        opts.airSupply = a;
+    }
     if (auto* sl = o->getProperty ("strumKeyLabels").getArray())
         for (const auto& s : *sl) opts.strumKeyLabels.add (s.toString());
     if (o->hasProperty ("whiteKeyTint")) opts.whiteKeyTint = o->getProperty ("whiteKeyTint").toString();
@@ -153,6 +163,7 @@ bool applyConfigFile (const juce::File& cfg, dmconv::ConvertOptions& opts, juce:
     // A typo'd recipe key ("reverbgain") is otherwise a silent no-op.
     static const char* knownKeys[] = { "gain", "reverbGain", "normalizeIr", "packSamples",
                                        "polySaveDefault", "omnichordStrum", "strumKeyLabels",
+                                       "airSupply",
                                        "whiteKeyTint", "blackKeyTint",
                                        "dropGroupTags", "doubleTrackBoostTag",
                                        "doubleTrackStereoBoost", "uiYOffset", "cropTop",

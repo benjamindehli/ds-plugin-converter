@@ -45,6 +45,11 @@ struct ConvertOptions
     // and per-strum-key captions.
     bool omnichordStrum = false;
 
+    // Shared-air ("fan") simulation (config "airSupply": {volume,brightness,attack},
+    // all optional) — written to the manifest's library-level airSupply, which makes
+    // the engine offer the settings toggle. For Elektrisk Salmesykkel (Yamaha L-20D).
+    std::optional<dm::AirSupply> airSupply;
+
     // Captions for the strum keys, in key-switch order (config "strumKeyLabels",
     // e.g. ["↑","↓","↑*","↓*"]). Empty / missing entries fall back to the menu
     // option's name — usually too wide for a single key, hence this override.
