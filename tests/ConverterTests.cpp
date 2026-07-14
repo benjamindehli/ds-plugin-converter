@@ -212,6 +212,11 @@ public:
             expectEquals (mode.strumKeys.getReference (1).seqOffset, 1);
 
             expect (mode.ui.tabs.getReference (0).menus.isEmpty(), "chord-order menu removed");
+            expect (mode.ui.strumSpeedReadout.has_value(), "readout takes the menu's spot");
+            expectEquals (mode.ui.strumSpeedReadout->x, 124);
+            expectEquals (mode.ui.strumSpeedReadout->y, 120 + 50);   // + default uiYOffset
+            expectEquals (mode.ui.strumSpeedReadout->width, 162);
+            expectEquals (mode.ui.strumSpeedReadout->height, 22);
             const auto& labels = mode.ui.keyboardLabels;
             expectEquals (labels.size(), 3);
             expectEquals (labels.getReference (0).loNote, 24);

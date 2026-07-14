@@ -346,6 +346,9 @@ ConvertResult convertLibrary (const ConvertOptions& options)
             }
             mode.menuKeySwitches.clear();
             menus.remove (0);   // inert now — ordering comes from the strum keys
+            // The background keeps the menu's black ribbon — repurpose that spot as
+            // the live strum-speed readout (note value / steps/s) the editor renders.
+            mode.ui.strumSpeedReadout = menu.rect;
 
             // Chord-type section labels: each trigger's sequence name minus its root
             // note prefix ("C#Minor7" → "Minor7"); consecutive chord keys sharing the
@@ -691,6 +694,8 @@ ConvertResult convertLibrary (const ConvertOptions& options)
         for (int mi = 0; mi < library.modes.size(); ++mi)
         {
             auto& ui = library.modes.getReference (mi).ui;
+            if (ui.strumSpeedReadout)
+                ui.strumSpeedReadout->y += options.uiYOffset;
             for (int ti = 0; ti < ui.tabs.size(); ++ti)
             {
                 auto& t = ui.tabs.getReference (ti);
