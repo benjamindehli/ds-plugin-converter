@@ -51,6 +51,76 @@ public:
         testSplitManifestOutput();
         testSamplePack();
         testOmnichordStrum();
+        testBackgroundFromMode();
+    }
+
+    void testBackgroundFromMode()
+    {
+        beginTest ("backgroundFromMode borrows another mode's background and drops the orphan");
+
+        auto root = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                        .getChildFile ("dmse_converter_bgfrom_test");
+        root.deleteRecursively();
+        root.createDirectory();
+
+        auto libDir = root.getChildFile ("lib");
+        auto outDir = root.getChildFile ("out");
+        writeSilentWav (libDir.getChildFile ("Samples/a.wav"), 1000);
+        for (const char* name : { "bgA.png", "bgB.png", "btn.png", "light_off.png", "light_on.png" })
+        {
+            auto f = libDir.getChildFile ("Resources").getChildFile (name);
+            f.getParentDirectory().createDirectory();
+            f.replaceWithText ("png-bytes");
+        }
+
+        auto preset = [] (const char* bg, const char* extra)
+        {
+            return juce::String (R"(<?xml version="1.0"?>
+<DecentSampler>
+  <ui bgImage="Resources/)") + bg + R"(" width="800" height="300"><tab name="main">)" + extra + R"(</tab></ui>
+  <groups attack="0" decay="0" sustain="1" release="0.1">
+    <group><sample path="Samples/a.wav" loNote="60" hiNote="60" rootNote="60" length="1000" sampleRate="48000"/></group>
+  </groups>
+</DecentSampler>)";
+        };
+        // light_on.png is referenced ONLY via a PATH-binding translationValue (an
+        // image swap, like Elektrisk's drone lights) — the orphan filter must keep it.
+        const char* lamp = R"(
+      <button x="10" y="10" width="20" height="20" style="image" value="0">
+        <state name="off" mainImage="Resources/btn.png" hoverImage="Resources/btn.png" clickImage="Resources/btn.png">
+          <binding type="control" level="ui" position="0" parameter="PATH" translation="fixed_value" translationValue="Resources/light_off.png"/>
+        </state>
+        <state name="on" mainImage="Resources/btn.png" hoverImage="Resources/btn.png" clickImage="Resources/btn.png">
+          <binding type="control" level="ui" position="0" parameter="PATH" translation="fixed_value" translationValue="Resources/light_on.png"/>
+        </state>
+      </button>
+      <image x="40" y="10" width="20" height="20" path="Resources/light_off.png"/>)";
+        libDir.getChildFile ("A.dspreset").replaceWithText (preset ("bgA.png", lamp));
+        libDir.getChildFile ("B.dspreset").replaceWithText (preset ("bgB.png", ""));
+
+        dmconv::ConvertOptions opts;
+        opts.packSamples = false;
+        opts.libraryDir  = libDir;
+        opts.outDir      = outDir;
+        opts.libraryName = "BgLib";
+        opts.backgroundFromMode["B"] = "A";
+
+        auto result = dmconv::convertLibrary (opts);
+        expect (result.ok, "conversion should succeed: " + result.errors.joinIntoString ("; "));
+
+        auto m = dm::loadManifestFromFolder (outDir.getChildFile ("manifest"));
+        expect (m.ok);
+        expectEquals (m.library.modes.size(), 2);
+        expectEquals (m.library.modes.getReference (0).ui.background, juce::String ("img:bgA"));
+        expectEquals (m.library.modes.getReference (1).ui.background, juce::String ("img:bgA"));
+
+        expect (outDir.getChildFile ("images/bgA.png").existsAsFile(), "shared background shipped");
+        expect (! outDir.getChildFile ("images/bgB.png").existsAsFile(),
+                "orphaned background neither ships nor embeds");
+        expect (outDir.getChildFile ("images/light_on.png").existsAsFile(),
+                "image referenced only by a PATH binding still ships");
+
+        root.deleteRecursively();
     }
 
     void testOmnichordStrum()

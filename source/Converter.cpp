@@ -387,6 +387,53 @@ ConvertResult convertLibrary (const ConvertOptions& options)
                             + " keyboard labels, chord-order menu removed)");
         }
 
+    // Background borrowed from another mode (config "backgroundFromMode") — plugin-only
+    // styling; the .dspreset (and the DS edition) keep their own. Must run BEFORE the
+    // asset transcode so a background nothing references any more is never emitted.
+    for (auto& mode : library.modes)
+        if (const auto bgIt = options.backgroundFromMode.find (mode.name);
+            bgIt != options.backgroundFromMode.end())
+        {
+            bool found = false;
+            for (const auto& other : library.modes)
+                if (other.name == bgIt->second)
+                {
+                    mode.ui.background = other.ui.background;
+                    found = true;
+                    result.log.add (mode.name + ": background from mode \"" + bgIt->second + "\"");
+                    break;
+                }
+            if (! found)
+                result.warnings.add (mode.name + ": backgroundFromMode source mode \""
+                                     + bgIt->second + "\" not found - background unchanged");
+        }
+
+    // Overrides above can orphan image assets (e.g. a replaced background) — drop
+    // any img: asset nothing references, so it neither ships nor embeds. References
+    // are found by scanning the SERIALIZED manifest rather than enumerating model
+    // fields: image ids also appear in binding translationValues (PATH image swaps,
+    // e.g. Elektrisk's drone lights) and any reference kind added later.
+    {
+        const auto json = dm::writeManifestToJson (library, true);
+        juce::StringArray referenced;
+        for (int pos = json.indexOf ("img:"); pos >= 0; pos = json.indexOf (pos + 1, "img:"))
+        {
+            int end = pos;
+            while (end < json.length() && json[end] != '"' && json[end] != '\\')
+                ++end;
+            referenced.addIfNotAlreadyThere (json.substring (pos, end));
+        }
+        juce::StringArray orphaned;
+        for (const auto& key : assets.getAllKeys())
+            if (key.startsWith ("img:") && ! referenced.contains (key))
+                orphaned.add (key);
+        for (const auto& key : orphaned)
+        {
+            result.log.add ("drop  unreferenced image asset " + key);
+            assets.remove (juce::StringRef (key));
+        }
+    }
+
     // The audio file is authoritative for length: we record each asset's actual
     // decoded frame count and write it into the manifest below (the .dspreset
     // `length` values are unreliable). The audio itself is never trimmed or padded.

@@ -50,6 +50,12 @@ struct ConvertOptions
     // the engine offer the settings toggle. For Elektrisk Salmesykkel (Yamaha L-20D).
     std::optional<dm::AirSupply> airSupply;
 
+    // Per-mode background override (config "backgroundFromMode": { "Mode": "OtherMode" }):
+    // the mode borrows OTHER MODE's background image. Plugin-only styling — e.g.
+    // Omni-84's AutoStrum keeps its keyswitch-legend background in DecentSampler,
+    // but the plugin renders live keyboard labels and uses the plain background.
+    std::map<juce::String, juce::String> backgroundFromMode;
+
     // Captions for the strum keys, in key-switch order (config "strumKeyLabels",
     // e.g. ["↑","↓","↑*","↓*"]). Empty / missing entries fall back to the menu
     // option's name — usually too wide for a single key, hence this override.

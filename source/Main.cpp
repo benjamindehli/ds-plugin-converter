@@ -94,6 +94,9 @@ bool applyConfigFile (const juce::File& cfg, dmconv::ConvertOptions& opts, juce:
             for (const auto& t : *tags) a.tags.add (t.toString());
         opts.airSupply = a;
     }
+    if (auto* bg = o->getProperty ("backgroundFromMode").getDynamicObject())
+        for (const auto& p : bg->getProperties())
+            opts.backgroundFromMode[p.name.toString()] = p.value.toString();
     if (auto* sl = o->getProperty ("strumKeyLabels").getArray())
         for (const auto& s : *sl) opts.strumKeyLabels.add (s.toString());
     if (o->hasProperty ("whiteKeyTint")) opts.whiteKeyTint = o->getProperty ("whiteKeyTint").toString();
@@ -163,7 +166,7 @@ bool applyConfigFile (const juce::File& cfg, dmconv::ConvertOptions& opts, juce:
     // A typo'd recipe key ("reverbgain") is otherwise a silent no-op.
     static const char* knownKeys[] = { "gain", "reverbGain", "normalizeIr", "packSamples",
                                        "polySaveDefault", "omnichordStrum", "strumKeyLabels",
-                                       "airSupply",
+                                       "airSupply", "backgroundFromMode",
                                        "whiteKeyTint", "blackKeyTint",
                                        "dropGroupTags", "doubleTrackBoostTag",
                                        "doubleTrackStereoBoost", "uiYOffset", "cropTop",
