@@ -83,6 +83,7 @@ bool applyConfigFile (const juce::File& cfg, dmconv::ConvertOptions& opts, juce:
     if (o->hasProperty ("normalizeIr")) opts.normalizeIr  = (bool)   o->getProperty ("normalizeIr");
     if (o->hasProperty ("packSamples")) opts.packSamples  = (bool)   o->getProperty ("packSamples");
     if (o->hasProperty ("polySaveDefault")) opts.polySaveDefault = (bool) o->getProperty ("polySaveDefault");
+    if (o->hasProperty ("retriggerMuteDefault")) opts.retriggerMuteDefault = (bool) o->getProperty ("retriggerMuteDefault");
     if (o->hasProperty ("omnichordStrum")) opts.omnichordStrum = (bool) o->getProperty ("omnichordStrum");
     if (auto* air = o->getProperty ("airSupply").getDynamicObject())
     {
@@ -165,7 +166,7 @@ bool applyConfigFile (const juce::File& cfg, dmconv::ConvertOptions& opts, juce:
 
     // A typo'd recipe key ("reverbgain") is otherwise a silent no-op.
     static const char* knownKeys[] = { "gain", "reverbGain", "normalizeIr", "packSamples",
-                                       "polySaveDefault", "omnichordStrum", "strumKeyLabels",
+                                       "polySaveDefault", "retriggerMuteDefault", "omnichordStrum", "strumKeyLabels",
                                        "airSupply", "backgroundFromMode",
                                        "whiteKeyTint", "blackKeyTint",
                                        "dropGroupTags", "doubleTrackBoostTag",

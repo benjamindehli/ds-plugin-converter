@@ -260,6 +260,7 @@ ConvertResult convertLibrary (const ConvertOptions& options)
     if (options.gainDb.has_value())
         library.gainDb = *options.gainDb;
     library.polySaveDefault = options.polySaveDefault;
+    library.retriggerMuteDefault = options.retriggerMuteDefault;
     library.airSupply = options.airSupply;   // shared-air simulation (settings toggle)
 
     juce::StringPairArray assets; // id -> library-relative path (deduped across modes)

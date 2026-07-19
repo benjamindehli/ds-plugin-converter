@@ -36,6 +36,10 @@ struct ConvertOptions
     // libraries whose controls blend muted groups in mid-note (config "polySaveDefault").
     bool polySaveDefault = true;
 
+    // Default for the Retrigger-mute toggle (one voice per key within a group). Set false
+    // for libraries where stacking the same key is wanted (config "retriggerMuteDefault").
+    bool retriggerMuteDefault = true;
+
     // Omnichord-style select+strum (config "omnichordStrum"): rewrite each mode's
     // chord-order key-switches into `strumKeys` carrying their menu option's
     // sequence-index offset. Chord keys then only SELECT the chord; the strum keys
