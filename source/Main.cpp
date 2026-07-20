@@ -196,10 +196,12 @@ int main (int argc, char* argv[])
     std::optional<int> uiYOffset;
     juce::String cropTopSpec;
     juce::String configArg;
+    bool forceRetranscode = false;
 
     for (int i = 1; i < argc; ++i)
     {
         const auto arg = juce::String::fromUTF8 (argv[i]);
+        if (arg == "--force") { forceRetranscode = true; continue; }
         if (arg == "--reverb-gain" && i + 1 < argc)
             reverbGainDb = juce::String::fromUTF8 (argv[++i]).getDoubleValue();
         else if (arg == "--gain" && i + 1 < argc)
@@ -246,7 +248,8 @@ int main (int argc, char* argv[])
                   << "                       a bare number = default for all modes; NAME=px overrides one\n"
                   << "                       mode (preset name). e.g. --crop-top \"60,Split=0\".\n"
                   << "  --config <file>      read options from a JSON recipe (default: <library-dir>/\n"
-                  << "                       dmse-convert.json if present). CLI flags override it.\n";
+                  << "                       dmse-convert.json if present). CLI flags override it.\n"
+                  << "  --force              re-transcode every sample (bypass the incremental cache).\n";
         return 2;
     }
 
@@ -273,6 +276,7 @@ int main (int argc, char* argv[])
     if (normalizeIr.has_value())  opts.normalizeIr  = *normalizeIr;
     if (packSamples.has_value())  opts.packSamples  = *packSamples;
     if (uiYOffset.has_value())    opts.uiYOffset    = *uiYOffset;
+    if (forceRetranscode)         opts.forceRetranscode = true;
 
     // --crop-top spec REPLACES the config's crop: bare number = default for all modes;
     // NAME=px overrides one mode.

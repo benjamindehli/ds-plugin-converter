@@ -17,6 +17,10 @@ namespace dmconv
 
 struct ConvertOptions
 {
+    // Force a full re-transcode of every sample, bypassing the incremental cache
+    // (CLI --force). Normally samples are re-encoded only when a source WAV changes.
+    bool forceRetranscode = false;
+
     juce::File libraryDir;            // source library root (holds *.dspreset + Samples/ + ...)
     juce::File outDir;                // where FLAC bundle + manifest.json are written
     juce::String libraryName;         // manifest "library" name (default: libraryDir name)

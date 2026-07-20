@@ -16,6 +16,16 @@ juce::String flacFileNameForId (const juce::String& id)
     return id.fromLastOccurrenceOf (":", false, false) + ".flac";
 }
 
+// Frame count of an existing FLAC (STREAMINFO only, no decode) — used by the
+// incremental fast path to fill in sample lengths without re-transcoding.
+juce::int64 flacFrameCount (const juce::File& flac)
+{
+    juce::AudioFormatManager fm;
+    fm.registerBasicFormats();
+    std::unique_ptr<juce::AudioFormatReader> r (fm.createReaderFor (flac));
+    return r != nullptr ? r->lengthInSamples : 0;
+}
+
 // Losslessly transcode a WAV to FLAC. Never trims, pads, or resamples: writes
 // exactly the frames the reader reports. `outFrames` returns that count and
 // `formatNote` is set when the source bit-depth had to be represented as 24-bit
@@ -456,11 +466,12 @@ ConvertResult convertLibrary (const ConvertOptions& options)
     const auto imagesDir  = options.outDir.getChildFile ("images");
 
     // Clean stale generated assets (re-runs, and the old flat layout where audio +
-    // images sat directly in assets/). The manifest at the root is overwritten below.
+    // images sat directly in assets/). IR + images are a handful of small files, so they
+    // are always rebuilt; SAMPLES (the bulk) are cleaned only when actually re-transcoded
+    // (the incremental fast path below).
     for (auto& f : options.outDir.findChildFiles (juce::File::findFiles, false,
                                                   "*.flac;*.png;*.jpg;*.jpeg"))
         f.deleteFile();
-    samplesDir.deleteRecursively();
     irDir.deleteRecursively();
     imagesDir.deleteRecursively();
     samplesDir.createDirectory();
@@ -473,11 +484,73 @@ ConvertResult convertLibrary (const ConvertOptions& options)
     const bool packing = options.packSamples;
     const auto packFile      = samplesDir.getChildFile ("samples.pak");
     const auto packIndexFile = samplesDir.getChildFile ("samples.pak.json");
+
+    // Incremental fast path: samples are re-transcoded only when a source WAV changed.
+    // A signature of every sample source (id|mtime|size) plus the packing mode is stored
+    // next to the output; if it matches the previous run and the outputs are intact, the
+    // whole transcode/pack stage is skipped and frame counts come from the cache (the pack
+    // index for packed builds, the FLAC headers for loose). A manifest-only edit (strum
+    // keys, colours, gains) then reconverts in a moment. --force always rebuilds.
+    const auto sigFile = samplesDir.getChildFile (".cache-sig");
+    juce::String sig = packing ? "pack\n" : "loose\n";
+    for (auto& id : assets.getAllKeys())
+        if (! id.startsWith ("img:") && ! id.startsWith ("ir:"))
+        {
+            const auto sf = options.libraryDir.getChildFile (assets[id]);
+            sig << id << "|" << sf.getLastModificationTime().toMilliseconds()
+                << "|" << sf.getSize() << "\n";
+        }
+
+    bool reuseSamples = ! options.forceRetranscode
+                     && sigFile.existsAsFile()
+                     && sigFile.loadFileAsString() == sig;
+    if (reuseSamples)
+    {
+        if (packing)   // frames from the pack index (needs the "f" field written below)
+        {
+            reuseSamples = false;
+            if (packFile.existsAsFile() && packIndexFile.existsAsFile())
+            {
+                const auto idxVar = juce::JSON::parse (packIndexFile.loadFileAsString());
+                if (auto* arr = idxVar.getArray())   // named local: getArray() points INTO idxVar,
+                {                                    // which must outlive the loop (else use-after-free)
+                    bool ok = true;
+                    for (auto& e : *arr)
+                    {
+                        auto* o = e.getDynamicObject();
+                        if (o == nullptr || ! o->hasProperty ("f")) { ok = false; break; }
+                        actualFrames.set (o->getProperty ("id").toString(), (juce::int64) o->getProperty ("f"));
+                    }
+                    reuseSamples = ok;
+                }
+            }
+        }
+        else   // loose FLACs: frames from each file's header
+        {
+            for (auto& id : assets.getAllKeys())
+                if (! id.startsWith ("img:") && ! id.startsWith ("ir:"))
+                {
+                    const auto f = samplesDir.getChildFile (flacFileNameForId (id));
+                    if (! f.existsAsFile()) { reuseSamples = false; break; }
+                    actualFrames.set (id, flacFrameCount (f));
+                }
+        }
+    }
+
+    if (reuseSamples)
+        result.log.add ("samples up to date - skipped re-transcode (--force to rebuild)");
+    else
+    {
+        for (auto& f : samplesDir.findChildFiles (juce::File::findFiles, false, "*.flac"))
+            f.deleteFile();
+        packFile.deleteFile();
+        packIndexFile.deleteFile();
+    }
+
     std::unique_ptr<juce::FileOutputStream> packOut;
     juce::Array<juce::var> packEntries;
-    if (packing)
+    if (packing && ! reuseSamples)
     {
-        packFile.deleteFile();
         packOut = packFile.createOutputStream();
         if (packOut == nullptr || ! packOut->openedOk())
             result.errors.add ("cannot open sample pack for writing: " + packFile.getFullPathName());
@@ -512,6 +585,8 @@ ConvertResult convertLibrary (const ConvertOptions& options)
         }
 
         const bool isIr = id.startsWith ("ir:");
+        if (reuseSamples && ! isIr)   // sample already cached (frames set above)
+            continue;
 
         // Packed samples: transcode to a temp FLAC (proven path), append its bytes to the
         // pack, and record the slice. IRs are never packed (they stay embedded).
@@ -531,6 +606,7 @@ ConvertResult convertLibrary (const ConvertOptions& options)
                     e->setProperty ("id", id);
                     e->setProperty ("o", offset);
                     e->setProperty ("l", (juce::int64) mb.getSize());
+                    e->setProperty ("f", frames);   // frame count for the incremental cache
                     packEntries.add (juce::var (e));
                     ++result.assetsTranscoded;
                     actualFrames.set (id, frames);
@@ -574,6 +650,12 @@ ConvertResult convertLibrary (const ConvertOptions& options)
         result.log.add ("pack  samples/samples.pak (" + juce::String (packEntries.size())
                         + " samples) + samples.pak.json");
     }
+
+    // Remember this sample set so the next run can skip re-transcoding (only when the
+    // build was clean — a failed transcode must not be cached as up to date).
+    if (! reuseSamples && result.errors.isEmpty())
+        sigFile.replaceWithText (sig, false, false, "\n");   // explicit LF: default CRLF would
+                                                              // never match the LF-built sig on reload
 
     // Make the decoded audio length authoritative in the manifest. We note — never
     // alter — any sample whose .dspreset `length` disagreed.
