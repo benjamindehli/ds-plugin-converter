@@ -66,9 +66,9 @@ public:
         auto libDir = root.getChildFile ("lib");
         auto outDir = root.getChildFile ("out");
         writeSilentWav (libDir.getChildFile ("Samples/a.wav"), 1000);
-        for (const char* name : { "bgA.png", "bgB.png", "btn.png", "light_off.png", "light_on.png" })
+        for (const char* imgName : { "bgA.png", "bgB.png", "btn.png", "light_off.png", "light_on.png" })
         {
-            auto f = libDir.getChildFile ("Resources").getChildFile (name);
+            auto f = libDir.getChildFile ("Resources").getChildFile (imgName);
             f.getParentDirectory().createDirectory();
             f.replaceWithText ("png-bytes");
         }
