@@ -41,7 +41,63 @@ public:
         testReleaseTriggerAndLfo();
         testSequenceTriggers();
         testMenu();
+        testGroupEffectBindings();
         testRoundTrip();
+    }
+
+    // A group-effect binding (level="group" + groupIndex + effectIndex, as in the
+    // Elektrisk organ swell) must be rewritten to reference the specific per-group
+    // effect by its own id, so the (group, slot) target no longer rides on positional
+    // indices. Mirrors the real preset: each group has a swell lowpass in slot 0 and a
+    // loudness gain in slot 1, driven by a single fader control.
+    void testGroupEffectBindings()
+    {
+        beginTest ("group-effect binding → per-group effect id (targetId)");
+        auto r = dmconv::parseDspreset (R"(<?xml version="1.0"?>
+<DecentSampler>
+  <ui width="812" height="375">
+    <tab name="main">
+      <control x="98" y="39" width="58" height="120" parameterName="Loudness" minValue="0" maxValue="127" value="0">
+        <binding type="effect" level="group" groupIndex="0" effectIndex="0" parameter="FX_FILTER_FREQUENCY" translation="linear" translationOutputMin="4000" translationOutputMax="22000"/>
+        <binding type="effect" level="group" groupIndex="1" effectIndex="1" parameter="LEVEL" translation="linear" translationOutputMin="0.0" translationOutputMax="6.0"/>
+      </control>
+    </tab>
+  </ui>
+  <groups>
+    <group>
+      <effects>
+        <effect type="lowpass" frequency="15000"/>
+        <effect type="gain" level="0"/>
+      </effects>
+      <sample path="Samples/a.wav" loNote="60" hiNote="60" rootNote="60"/>
+    </group>
+    <group>
+      <effects>
+        <effect type="lowpass" frequency="15000"/>
+        <effect type="gain" level="0"/>
+      </effects>
+      <sample path="Samples/b.wav" loNote="62" hiNote="62" rootNote="62"/>
+    </group>
+  </groups>
+</DecentSampler>)", "Organ");
+
+        expect (r.ok, r.errors.joinIntoString ("; "));
+        expectEquals (r.mode.groups.size(), 2);
+
+        // Each per-group effect got a stable id scoped by its group's uid.
+        const auto& g0 = r.mode.groups.getReference (0);
+        const auto& g1 = r.mode.groups.getReference (1);
+        expectEquals (g0.effects.size(), 2);
+        expectEquals (g0.effects.getReference (0).id, juce::String ("grp_0_fx_lowpass"));
+        expectEquals (g0.effects.getReference (1).id, juce::String ("grp_0_fx_gain"));
+        expectEquals (g1.effects.getReference (1).id, juce::String ("grp_1_fx_gain"));
+
+        // The bindings now point at the specific effect by id (group 0 slot 0 filter,
+        // group 1 slot 1 gain), not at the group + a positional effectIndex.
+        const auto& binds = r.mode.ui.tabs.getReference (0).controls.getReference (0).bindings;
+        expectEquals (binds.size(), 2);
+        expectEquals (binds.getReference (0).targetId, juce::String ("grp_0_fx_lowpass"));
+        expectEquals (binds.getReference (1).targetId, juce::String ("grp_1_fx_gain"));
     }
 
     void testMenu()

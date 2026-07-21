@@ -711,6 +711,20 @@ ParseResult parseDspreset (const juce::String& xmlText, const juce::String& mode
             ++gn;
         }
 
+        // Group effects: each per-group insert effect gets a stable id scoped by its
+        // group's uid, so a group-effect binding can target it by that single id instead
+        // of a (groupIndex, effectIndex) pair (e.g. an organ's per-stop swell filter).
+        for (auto& g : res.mode.groups)
+        {
+            std::map<juce::String, int> gTypeCount;
+            for (auto& e : g.effects)
+            {
+                const int n = ++gTypeCount[e.type];
+                e.id = g.uid + "_fx_" + (e.type.isNotEmpty() ? e.type : juce::String ("effect"))
+                     + (n > 1 ? "_" + juce::String (n) : juce::String());
+            }
+        }
+
         // Phase 3: modulators (LFOs). Each gets a stable id; MOD_AMOUNT/FREQUENCY
         // bindings (which target a modulator via position = DecentSampler modulatorIndex)
         // are rewritten to reference it by id.
@@ -725,9 +739,24 @@ ParseResult parseDspreset (const juce::String& xmlText, const juce::String& mode
             if (b.effectIndex && *b.effectIndex >= 0 && *b.effectIndex < res.mode.effects.size())
                 b.targetId = res.mode.effects.getReference (*b.effectIndex).id;
         };
+        auto resolveGroupEffectTarget = [&res] (dm::Binding& b)
+        {
+            if (b.targetId.isNotEmpty())
+                return;
+            // A group-effect binding carries both a groupIndex (which group) and an
+            // effectIndex (which slot in that group's chain) — rewrite it to the
+            // effect's own id so the slot is addressed by id, not position.
+            if (b.level == "group" && b.effectIndex && b.groupIndex
+                && *b.groupIndex >= 0 && *b.groupIndex < res.mode.groups.size())
+            {
+                auto& g = res.mode.groups.getReference (*b.groupIndex);
+                if (*b.effectIndex >= 0 && *b.effectIndex < g.effects.size())
+                    b.targetId = g.effects.getReference (*b.effectIndex).id;
+            }
+        };
         auto resolveGroupTarget = [&res] (dm::Binding& b)
         {
-            if (b.targetId.isNotEmpty())   // already an effect target (Phase 1) or resolved
+            if (b.targetId.isNotEmpty())   // already an effect/group-effect target or resolved
                 return;
             if (b.groupIndex && *b.groupIndex >= 0 && *b.groupIndex < res.mode.groups.size())
                 b.targetId = res.mode.groups.getReference (*b.groupIndex).uid;
@@ -743,6 +772,7 @@ ParseResult parseDspreset (const juce::String& xmlText, const juce::String& mode
         auto resolve = [&] (dm::Binding& b)
         {
             resolveEffectTarget (b);
+            resolveGroupEffectTarget (b);
             resolveGroupTarget (b);
             resolveModulatorTarget (b);
         };
