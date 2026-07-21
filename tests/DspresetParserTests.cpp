@@ -42,7 +42,54 @@ public:
         testSequenceTriggers();
         testMenu();
         testGroupEffectBindings();
+        testElektriskIdBindings();
         testRoundTrip();
+    }
+
+    // The real Elektrisk Salmesykkel presets are the production stress test for
+    // id-based bindings: seven organ-stop groups, each with a per-group swell lowpass
+    // and loudness gain, driven through 28 group-effect bindings plus UI cross-refs.
+    // Parsing must resolve every positional index to a targetId — the parser's own
+    // validation fails the conversion otherwise, so r.ok proves the migration is
+    // complete for these presets (the ones I cannot re-convert without the samples).
+    void testElektriskIdBindings()
+    {
+        beginTest ("Elektrisk presets: every binding resolves to an id (no bare index)");
+
+        for (const auto* file : { "ElektriskSalmesykkel.dspreset",
+                                  "ElektriskSalmesykkel (Looped).dspreset" })
+        {
+            auto r = dmconv::parseDspreset (load ("elektrisk-salmesykkel", file), "Organ");
+            expect (r.ok, juce::String (file) + ": " + r.errors.joinIntoString ("; "));
+
+            int groupEffectBindings = 0;
+            auto audit = [&] (const dm::Binding& b)
+            {
+                const bool hasIndex = b.effectIndex.has_value() || b.groupIndex.has_value()
+                                    || b.controlIndex.has_value() || b.position.has_value();
+                if (hasIndex)
+                    expect (b.targetId.isNotEmpty(),
+                            juce::String (file) + ": binding with an index kept no targetId ("
+                            + b.parameter + ")");
+                // Group-effect binding → targetId names a per-group effect (…_fx_…).
+                if (b.level == "group" && b.type == "effect")
+                {
+                    ++groupEffectBindings;
+                    expect (b.targetId.contains ("_fx_"),
+                            juce::String (file) + ": group-effect targetId not an effect id: " + b.targetId);
+                }
+            };
+            for (auto& tab : r.mode.ui.tabs)
+            {
+                for (auto& c  : tab.controls) for (auto& b : c.bindings) audit (b);
+                for (auto& bt : tab.buttons)  for (auto& st : bt.states)  for (auto& b : st.bindings) audit (b);
+                for (auto& mn : tab.menus)    for (auto& op : mn.options)  for (auto& b : op.bindings) audit (b);
+            }
+            for (auto& lfo : r.mode.modulators)
+                for (auto& b : lfo.bindings) audit (b);
+
+            expect (groupEffectBindings > 0, juce::String (file) + ": expected group-effect bindings");
+        }
     }
 
     // A group-effect binding (level="group" + groupIndex + effectIndex, as in the

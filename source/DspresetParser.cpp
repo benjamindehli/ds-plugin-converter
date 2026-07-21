@@ -783,9 +783,12 @@ ParseResult parseDspreset (const juce::String& xmlText, const juce::String& mode
             for (auto& bt : tab.buttons)  for (auto& st : bt.states)  for (auto& b : st.bindings) resolve (b);
             for (auto& mn : tab.menus)    for (auto& op : mn.options)  for (auto& b : op.bindings) resolve (b);
         }
-        for (auto& lfo : res.mode.modulators)   // tremolo/tuning modulators target groups by uid
+        // Modulator bindings drive groups (tremolo/tuning by uid) AND per-group effects
+        // (e.g. Elektrisk's tremulant swelling a group's gain slot) — run the full
+        // resolve so group-effect targets become effect ids, not just the group uid.
+        for (auto& lfo : res.mode.modulators)
             for (auto& b : lfo.bindings)
-                resolveGroupTarget (b);
+                resolve (b);
 
         // Phase 4: UI elements. Each control/button/menu/image gets a stable id; bindings
         // that target one by controlIndex — PATH (light image swap), VISIBLE/OPACITY, and
@@ -820,6 +823,35 @@ ParseResult parseDspreset (const juce::String& xmlText, const juce::String& mode
                     if (auto it = ciToId.find (*cb.controlIndex); it != ciToId.end())
                         cb.targetId = it->second;
         }
+
+        // Validation: bindings are id-based now, so the manifest writer drops the
+        // positional element indices. Any binding that still carries one without a
+        // resolved targetId would silently lose its target — fail the conversion loudly
+        // here instead, so a resolve-pass gap is caught at build time, not at runtime.
+        auto needsId = [] (const dm::Binding& b)
+        {
+            return b.targetId.isEmpty()
+                && (b.effectIndex.has_value() || b.groupIndex.has_value()
+                    || b.controlIndex.has_value() || b.position.has_value());
+        };
+        auto check = [&] (const dm::Binding& b, const juce::String& where)
+        {
+            if (needsId (b))
+                res.errors.add ("binding target did not resolve to an id (" + where
+                                + ", parameter=" + b.parameter + ")");
+        };
+        for (auto& tab : res.mode.ui.tabs)
+        {
+            for (auto& c  : tab.controls) for (auto& b : c.bindings) check (b, "control " + c.label);
+            for (auto& bt : tab.buttons)  for (auto& st : bt.states)  for (auto& b : st.bindings) check (b, "button " + bt.id);
+            for (auto& mn : tab.menus)    for (auto& op : mn.options)  for (auto& b : op.bindings) check (b, "menu " + mn.id);
+        }
+        for (auto& lfo : res.mode.modulators)
+            for (auto& b : lfo.bindings) check (b, "modulator " + lfo.id);
+        for (auto& cb : res.mode.ccBindings)
+            if (cb.targetId.isEmpty() && cb.controlIndex.has_value())
+                res.errors.add ("cc binding target did not resolve to an id (cc="
+                                + juce::String (cb.cc) + ")");
     }
 
     // A groups-less preset renders no sound — say so explicitly. (Without this,
