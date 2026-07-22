@@ -185,10 +185,12 @@ bool applyConfigFile (const juce::File& cfg, dmconv::ConvertOptions& opts, juce:
         }
     }
 
+    opts.overlayScope = o->getProperty ("overlayScope").toString();   // "" | "face" | "instrument"
+
     // A typo'd recipe key ("reverbgain") is otherwise a silent no-op.
     static const char* knownKeys[] = { "gain", "reverbGain", "normalizeIr", "packSamples",
                                        "polySaveDefault", "retriggerMuteDefault", "omnichordStrum", "strumKeyLabels",
-                                       "airSupply", "backgroundFromMode", "overlay",
+                                       "airSupply", "backgroundFromMode", "overlay", "overlayScope",
                                        "whiteKeyTint", "blackKeyTint",
                                        "dropGroupTags", "doubleTrackBoostTag",
                                        "doubleTrackStereoBoost", "uiYOffset", "cropTop",

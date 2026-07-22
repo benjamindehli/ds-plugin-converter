@@ -451,7 +451,9 @@ ConvertResult convertLibrary (const ConvertOptions& options)
         {
             assets.set (id, path);
             mode.ui.overlay = id;
-            result.log.add (mode.name + ": overlay " + path);
+            mode.ui.overlayScope = options.overlayScope;   // "" / "face" / "instrument"
+            result.log.add (mode.name + ": overlay " + path
+                            + (options.overlayScope.isNotEmpty() ? " (" + options.overlayScope + ")" : juce::String()));
         }
     }
 

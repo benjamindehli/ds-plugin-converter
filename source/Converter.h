@@ -73,6 +73,11 @@ struct ConvertOptions
     bool haveOverlayDefault = false;
     std::map<juce::String, juce::String> overlayByMode;
 
+    // How far an overlay reaches (config "overlayScope"): "" / "face" (the face only) or
+    // "instrument" (the face plus the keyboard, excluding the top and bottom bars).
+    // Applied to every mode that gets an overlay.
+    juce::String overlayScope;
+
     // Captions for the strum keys, in key-switch order (config "strumKeyLabels",
     // e.g. ["↑","↓","↑*","↓*"]). Empty / missing entries fall back to the menu
     // option's name — usually too wide for a single key, hence this override.
