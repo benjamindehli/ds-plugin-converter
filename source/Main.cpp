@@ -164,10 +164,31 @@ bool applyConfigFile (const juce::File& cfg, dmconv::ConvertOptions& opts, juce:
         }
     }
 
+    const auto ov = o->getProperty ("overlay");
+    if (ov.isString())                                // scalar path → applies to every mode
+    {
+        opts.overlayDefault     = ov.toString();
+        opts.haveOverlayDefault = true;
+    }
+    else if (auto* ovo = ov.getDynamicObject())       // { "default": "...", "ModeName": "..." }
+    {
+        for (const auto& p : ovo->getProperties())
+        {
+            const auto key = p.name.toString();
+            if (key == "*" || key == "default")
+            {
+                opts.overlayDefault     = p.value.toString();
+                opts.haveOverlayDefault = true;
+            }
+            else
+                opts.overlayByMode[key] = p.value.toString();
+        }
+    }
+
     // A typo'd recipe key ("reverbgain") is otherwise a silent no-op.
     static const char* knownKeys[] = { "gain", "reverbGain", "normalizeIr", "packSamples",
                                        "polySaveDefault", "retriggerMuteDefault", "omnichordStrum", "strumKeyLabels",
-                                       "airSupply", "backgroundFromMode",
+                                       "airSupply", "backgroundFromMode", "overlay",
                                        "whiteKeyTint", "blackKeyTint",
                                        "dropGroupTags", "doubleTrackBoostTag",
                                        "doubleTrackStereoBoost", "uiYOffset", "cropTop",

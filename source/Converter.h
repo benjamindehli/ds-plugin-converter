@@ -64,6 +64,15 @@ struct ConvertOptions
     // but the plugin renders live keyboard labels and uses the plain background.
     std::map<juce::String, juce::String> backgroundFromMode;
 
+    // Per-mode overlay image (config "overlay"): a mostly-transparent PNG (library-
+    // relative path, e.g. "Resources/glass.png") drawn OVER the background and every
+    // control, without blocking them. Plugin-only styling. A string applies to every
+    // mode (overlayDefault); an object { "default": "...", "ModeName": "..." } keys it
+    // per mode. Empty = no overlay.
+    juce::String overlayDefault;
+    bool haveOverlayDefault = false;
+    std::map<juce::String, juce::String> overlayByMode;
+
     // Captions for the strum keys, in key-switch order (config "strumKeyLabels",
     // e.g. ["↑","↓","↑*","↓*"]). Empty / missing entries fall back to the menu
     // option's name — usually too wide for a single key, hence this override.

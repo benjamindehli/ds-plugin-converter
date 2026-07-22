@@ -422,6 +422,39 @@ ConvertResult convertLibrary (const ConvertOptions& options)
                                      + bgIt->second + "\" not found - background unchanged");
         }
 
+    // Overlay image (config "overlay"): register a mostly-transparent PNG as an image
+    // asset and point the mode's ui.overlay at it. The engine draws it over the whole
+    // face without blocking controls. Plugin-only styling; runs BEFORE the orphan cull
+    // so the newly referenced image survives (ui.overlay appears in the serialized
+    // manifest the cull scans).
+    for (auto& mode : library.modes)
+    {
+        juce::String path;
+        if (const auto it = options.overlayByMode.find (mode.name); it != options.overlayByMode.end())
+            path = it->second;
+        else if (options.haveOverlayDefault)
+            path = options.overlayDefault;
+        if (path.isEmpty())
+            continue;
+
+        if (! options.libraryDir.getChildFile (path).existsAsFile())
+        {
+            result.warnings.add (mode.name + ": overlay image \"" + path + "\" not found - skipped");
+            continue;
+        }
+        const auto id = "img:" + juce::File (path).getFileNameWithoutExtension();
+        const auto existing = assets.getValue (id, {});
+        if (existing.isNotEmpty() && existing != path)
+            result.warnings.add (mode.name + ": overlay id \"" + id + "\" already maps to \""
+                                 + existing + "\" — rename the overlay file");
+        else
+        {
+            assets.set (id, path);
+            mode.ui.overlay = id;
+            result.log.add (mode.name + ": overlay " + path);
+        }
+    }
+
     // Overrides above can orphan image assets (e.g. a replaced background) — drop
     // any img: asset nothing references, so it neither ships nor embeds. References
     // are found by scanning the SERIALIZED manifest rather than enumerating model

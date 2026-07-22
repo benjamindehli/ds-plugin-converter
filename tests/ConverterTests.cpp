@@ -52,6 +52,58 @@ public:
         testSamplePack();
         testOmnichordStrum();
         testBackgroundFromMode();
+        testOverlay();
+    }
+
+    void testOverlay()
+    {
+        beginTest ("overlay recipe embeds the image and sets ui.overlay per mode");
+
+        auto root = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                        .getChildFile ("dmse_converter_overlay_test");
+        root.deleteRecursively();
+        root.createDirectory();
+
+        auto libDir = root.getChildFile ("lib");
+        auto outDir = root.getChildFile ("out");
+        writeSilentWav (libDir.getChildFile ("Samples/a.wav"), 1000);
+        for (const char* imgName : { "bg.png", "glass.png" })
+        {
+            auto f = libDir.getChildFile ("Resources").getChildFile (imgName);
+            f.getParentDirectory().createDirectory();
+            f.replaceWithText ("png-bytes");
+        }
+
+        auto preset = R"(<?xml version="1.0"?>
+<DecentSampler>
+  <ui bgImage="Resources/bg.png" width="800" height="300"><tab name="main"></tab></ui>
+  <groups attack="0" decay="0" sustain="1" release="0.1">
+    <group><sample path="Samples/a.wav" loNote="60" hiNote="60" rootNote="60" length="1000" sampleRate="48000"/></group>
+  </groups>
+</DecentSampler>)";
+        libDir.getChildFile ("Main.dspreset").replaceWithText (preset);
+
+        dmconv::ConvertOptions opts;
+        opts.packSamples = false;
+        opts.libraryDir  = libDir;
+        opts.outDir      = outDir;
+        opts.libraryName = "OverlayLib";
+        opts.overlayDefault     = "Resources/glass.png";   // scalar recipe → every mode
+        opts.haveOverlayDefault = true;
+
+        auto result = dmconv::convertLibrary (opts);
+        expect (result.ok, "conversion should succeed: " + result.errors.joinIntoString ("; "));
+
+        auto m = dm::loadManifestFromFolder (outDir.getChildFile ("manifest"));
+        expect (m.ok);
+        expectEquals (m.library.modes.size(), 1);
+        expectEquals (m.library.modes.getReference (0).ui.overlay, juce::String ("img:glass"));
+        // Distinct from the background, and the overlay PNG is embedded (survives the
+        // orphan cull because ui.overlay references it).
+        expectEquals (m.library.modes.getReference (0).ui.background, juce::String ("img:bg"));
+        expect (outDir.getChildFile ("images/glass.png").existsAsFile(), "overlay image shipped");
+
+        root.deleteRecursively();
     }
 
     void testBackgroundFromMode()
