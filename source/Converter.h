@@ -132,6 +132,14 @@ struct ConvertOptions
     juce::String whiteKeyTint;
     juce::String blackKeyTint;
 
+    // Per-plugin dropdown-popup colours (config "menuPopupColors": { background, text,
+    // highlight, highlightText }; ARGB hex). Style the list that drops down from in-GUI
+    // select menus. Applied to every mode. Empty = default look.
+    juce::String menuPopupBackground;
+    juce::String menuPopupText;
+    juce::String menuPopupHighlight;
+    juce::String menuPopupHighlightText;
+
     // Drop groups carrying any of these tags + all bindings targeting them. Used to remove
     // DecentSampler workaround duplicates (e.g. VCCO's "A2" = a copy of "A" for the double-
     // track-off state). From dmse-convert.json "dropGroupTags".

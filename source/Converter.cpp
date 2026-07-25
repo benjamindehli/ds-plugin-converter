@@ -861,6 +861,12 @@ ConvertResult convertLibrary (const ConvertOptions& options)
         // Global per-key-type tint (config only): applies to every mode.
         mode.ui.whiteKeyTint = options.whiteKeyTint;
         mode.ui.blackKeyTint = options.blackKeyTint;
+
+        // Per-plugin dropdown-popup colours (config only): applies to every mode.
+        mode.ui.menuPopupBackground    = options.menuPopupBackground;
+        mode.ui.menuPopupText          = options.menuPopupText;
+        mode.ui.menuPopupHighlight     = options.menuPopupHighlight;
+        mode.ui.menuPopupHighlightText = options.menuPopupHighlightText;
     }
 
     // Drop DecentSampler duplicate groups (e.g. A2), compensate loudness, and auto-link

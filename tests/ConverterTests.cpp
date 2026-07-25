@@ -91,6 +91,10 @@ public:
         opts.overlayDefault     = "Resources/glass.png";   // scalar recipe → every mode
         opts.haveOverlayDefault = true;
         opts.overlayScope       = "instrument";            // reaches over the keyboard too
+        opts.menuPopupBackground    = "FF202122";          // dropdown-popup colours → every mode
+        opts.menuPopupText          = "FFE8E9EA";
+        opts.menuPopupHighlight     = "FF0891B2";
+        opts.menuPopupHighlightText = "FFFFFFFF";
 
         auto result = dmconv::convertLibrary (opts);
         expect (result.ok, "conversion should succeed: " + result.errors.joinIntoString ("; "));
@@ -100,6 +104,8 @@ public:
         expectEquals (m.library.modes.size(), 1);
         expectEquals (m.library.modes.getReference (0).ui.overlay,      juce::String ("img:glass"));
         expectEquals (m.library.modes.getReference (0).ui.overlayScope, juce::String ("instrument"));
+        expectEquals (m.library.modes.getReference (0).ui.menuPopupBackground,    juce::String ("FF202122"));
+        expectEquals (m.library.modes.getReference (0).ui.menuPopupHighlightText, juce::String ("FFFFFFFF"));
         // Distinct from the background, and the overlay PNG is embedded (survives the
         // orphan cull because ui.overlay references it).
         expectEquals (m.library.modes.getReference (0).ui.background, juce::String ("img:bg"));
