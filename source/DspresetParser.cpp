@@ -348,6 +348,7 @@ dm::Control parseControl (const XmlElement& e, ParseResult& res)
     c.rect      = parseRect (e);
     c.label     = e.getStringAttribute ("parameterName");
     c.valueType = e.getStringAttribute ("type");
+    c.stepped   = e.getStringAttribute ("valueType").equalsIgnoreCase ("integer");   // DS integer knob → snap to steps
     c.min       = optD (e, "minValue");
     c.max       = optD (e, "maxValue");
     c.value     = optD (e, "value");

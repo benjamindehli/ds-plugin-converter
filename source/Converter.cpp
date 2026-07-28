@@ -867,6 +867,14 @@ ConvertResult convertLibrary (const ConvertOptions& options)
         mode.ui.menuPopupText          = options.menuPopupText;
         mode.ui.menuPopupHighlight     = options.menuPopupHighlight;
         mode.ui.menuPopupHighlightText = options.menuPopupHighlightText;
+
+        // Per-control step labels (config "valueLabels", keyed by parameterName).
+        if (! options.valueLabelsByControl.empty())
+            for (auto& tab : mode.ui.tabs)
+                for (auto& c : tab.controls)
+                    if (const auto vlIt = options.valueLabelsByControl.find (c.label);
+                        vlIt != options.valueLabelsByControl.end())
+                        c.valueLabels = vlIt->second;
     }
 
     // Drop DecentSampler duplicate groups (e.g. A2), compensate loudness, and auto-link

@@ -43,7 +43,27 @@ public:
         testMenu();
         testGroupEffectBindings();
         testElektriskIdBindings();
+        testSteppedControl();
         testRoundTrip();
+    }
+
+    // DecentSampler valueType="integer" → the control is a stepped knob; type="float" is not.
+    void testSteppedControl()
+    {
+        beginTest ("valueType=\"integer\" marks a control stepped");
+        auto r = dmconv::parseDspreset (R"(<?xml version="1.0"?>
+<DecentSampler>
+  <ui width="400" height="200"><tab name="main">
+    <control x="10" y="10" width="40" height="40" parameterName="Sustain" minValue="0" maxValue="6" valueType="integer" value="0"/>
+    <control x="60" y="10" width="40" height="40" parameterName="Body" type="float" minValue="0" maxValue="10" value="5"/>
+  </tab></ui>
+  <groups><group><sample path="Samples/a.wav" loNote="60" hiNote="60" rootNote="60"/></group></groups>
+</DecentSampler>)", "M");
+        expect (r.ok, r.errors.joinIntoString ("; "));
+        const auto& controls = r.mode.ui.tabs.getReference (0).controls;
+        expectEquals (controls.size(), 2);
+        expect (controls.getReference (0).stepped,   "integer control should be stepped");
+        expect (! controls.getReference (1).stepped, "float control should not be stepped");
     }
 
     // The real Elektrisk Salmesykkel presets are the production stress test for

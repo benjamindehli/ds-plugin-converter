@@ -110,6 +110,16 @@ bool applyConfigFile (const juce::File& cfg, dmconv::ConvertOptions& opts, juce:
         opts.menuPopupHighlight     = mp->getProperty ("highlight").toString();
         opts.menuPopupHighlightText = mp->getProperty ("highlightText").toString();
     }
+
+    // "valueLabels": { "<parameterName>": { "0": "dyn", "1": "1", ... } }
+    if (auto* vl = o->getProperty ("valueLabels").getDynamicObject())
+        for (const auto& ctl : vl->getProperties())
+            if (auto* steps = ctl.value.getDynamicObject())
+            {
+                auto& m = opts.valueLabelsByControl[ctl.name.toString()];
+                for (const auto& s : steps->getProperties())
+                    m[s.name.toString().getIntValue()] = s.value.toString();
+            }
     if (auto* dt = o->getProperty ("dropGroupTags").getArray())
         for (const auto& t : *dt) opts.dropGroupTags.add (t.toString());
     if (o->hasProperty ("doubleTrackBoostTag")) opts.doubleTrackBoostTag = o->getProperty ("doubleTrackBoostTag").toString();
@@ -199,7 +209,7 @@ bool applyConfigFile (const juce::File& cfg, dmconv::ConvertOptions& opts, juce:
     static const char* knownKeys[] = { "gain", "reverbGain", "normalizeIr", "packSamples",
                                        "polySaveDefault", "retriggerMuteDefault", "omnichordStrum", "strumKeyLabels",
                                        "airSupply", "backgroundFromMode", "overlay", "overlayScope",
-                                       "whiteKeyTint", "blackKeyTint", "menuPopupColors",
+                                       "whiteKeyTint", "blackKeyTint", "menuPopupColors", "valueLabels",
                                        "dropGroupTags", "doubleTrackBoostTag",
                                        "doubleTrackStereoBoost", "uiYOffset", "cropTop",
                                        "keyboardColors", "keyboardLabels" };

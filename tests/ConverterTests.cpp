@@ -53,6 +53,49 @@ public:
         testOmnichordStrum();
         testBackgroundFromMode();
         testOverlay();
+        testValueLabels();
+    }
+
+    void testValueLabels()
+    {
+        beginTest ("valueType=integer → stepped, and valueLabels recipe renames steps");
+
+        auto root = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                        .getChildFile ("dmse_converter_valuelabels_test");
+        root.deleteRecursively();
+        root.createDirectory();
+        auto libDir = root.getChildFile ("lib");
+        auto outDir = root.getChildFile ("out");
+        writeSilentWav (libDir.getChildFile ("Samples/a.wav"), 1000);
+
+        libDir.getChildFile ("Main.dspreset").replaceWithText (R"(<?xml version="1.0"?>
+<DecentSampler>
+  <ui width="400" height="200"><tab name="main">
+    <control x="10" y="10" width="40" height="40" parameterName="Snare - Sustain" minValue="0" maxValue="6" valueType="integer" value="0"/>
+  </tab></ui>
+  <groups attack="0" decay="0" sustain="1" release="0.1">
+    <group><sample path="Samples/a.wav" loNote="60" hiNote="60" rootNote="60" length="1000" sampleRate="48000"/></group>
+  </groups>
+</DecentSampler>)");
+
+        dmconv::ConvertOptions opts;
+        opts.packSamples = false;
+        opts.libraryDir  = libDir;
+        opts.outDir      = outDir;
+        opts.libraryName = "StepLib";
+        opts.valueLabelsByControl["Snare - Sustain"] = { { 0, "dyn" } };
+
+        auto result = dmconv::convertLibrary (opts);
+        expect (result.ok, "conversion should succeed: " + result.errors.joinIntoString ("; "));
+
+        auto m = dm::loadManifestFromFolder (outDir.getChildFile ("manifest"));
+        expect (m.ok);
+        const auto& c = m.library.modes.getReference (0).ui.tabs.getReference (0).controls.getReference (0);
+        expect (c.stepped, "integer control converted to a stepped control");
+        expectEquals (c.valueLabels.at (0), juce::String ("dyn"));   // labelled step
+        expect (c.valueLabels.find (1) == c.valueLabels.end(), "unlabelled step keeps its number");
+
+        root.deleteRecursively();
     }
 
     void testOverlay()

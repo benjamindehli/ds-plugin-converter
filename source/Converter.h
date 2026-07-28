@@ -140,6 +140,11 @@ struct ConvertOptions
     juce::String menuPopupHighlight;
     juce::String menuPopupHighlightText;
 
+    // Per-control step labels (config "valueLabels": { "<parameterName>": { "0": "dyn", ... } }):
+    // rename specific step values on a stepped (valueType="integer") knob, shown in the readout
+    // and as the DAW automation value. Keyed by the control's parameterName; applied to every mode.
+    std::map<juce::String, std::map<int, juce::String>> valueLabelsByControl;
+
     // Drop groups carrying any of these tags + all bindings targeting them. Used to remove
     // DecentSampler workaround duplicates (e.g. VCCO's "A2" = a copy of "A" for the double-
     // track-off state). From dmse-convert.json "dropGroupTags".
