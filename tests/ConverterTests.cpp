@@ -3,72 +3,68 @@
 //  - --reverb-gain bakes outputLevel (dB) into convolution effects
 
 #include "../source/Converter.h"
-#include <model/ManifestLoader.h>
-#include <juce_audio_formats/juce_audio_formats.h>
 #include <cmath>
+#include <juce_audio_formats/juce_audio_formats.h>
+#include <model/ManifestLoader.h>
 
-namespace
-{
-void writeSilentWav (const juce::File& file, int frames)
-{
-    file.getParentDirectory().createDirectory();
-    file.deleteFile();
+namespace {
+void writeSilentWav(const juce::File &file, int frames) {
+  file.getParentDirectory().createDirectory();
+  file.deleteFile();
 
-    juce::WavAudioFormat wav;
-    std::unique_ptr<juce::FileOutputStream> out (file.createOutputStream());
-    std::unique_ptr<juce::AudioFormatWriter> writer (
-        wav.createWriterFor (out.get(), 48000.0, 1, 16, {}, 0));
-    if (writer != nullptr)
-    {
-        out.release();
-        juce::AudioBuffer<float> buf (1, frames);
-        buf.clear();
-        writer->writeFromAudioSampleBuffer (buf, 0, frames);
-        writer.reset();
-    }
+  juce::WavAudioFormat wav;
+  std::unique_ptr<juce::FileOutputStream> out(file.createOutputStream());
+  std::unique_ptr<juce::AudioFormatWriter> writer(
+      wav.createWriterFor(out.get(), 48000.0, 1, 16, {}, 0));
+  if (writer != nullptr) {
+    out.release();
+    juce::AudioBuffer<float> buf(1, frames);
+    buf.clear();
+    writer->writeFromAudioSampleBuffer(buf, 0, frames);
+    writer.reset();
+  }
 }
 
-bool anyWarningContains (const juce::StringArray& warnings, const juce::String& needle)
-{
-    for (auto& w : warnings)
-        if (w.contains (needle))
-            return true;
-    return false;
+bool anyWarningContains(const juce::StringArray &warnings,
+                        const juce::String &needle) {
+  for (auto &w : warnings)
+    if (w.contains(needle))
+      return true;
+  return false;
 }
 
-class ConverterTests : public juce::UnitTest
-{
+class ConverterTests : public juce::UnitTest {
 public:
-    ConverterTests() : juce::UnitTest ("Converter", "converter") {}
+  ConverterTests() : juce::UnitTest("Converter", "converter") {}
 
-    void runTest() override
-    {
-        testLengthOverride();
-        testReverbGain();
-        testLoopValidation();
-        testImageEmbedding();
-        testUiYOffset();
-        testSplitManifestOutput();
-        testSamplePack();
-        testOmnichordStrum();
-        testBackgroundFromMode();
-        testOverlay();
-        testValueLabels();
-    }
+  void runTest() override {
+    testLengthOverride();
+    testReverbGain();
+    testLoopValidation();
+    testImageEmbedding();
+    testUiYOffset();
+    testSplitManifestOutput();
+    testSamplePack();
+    testOmnichordStrum();
+    testBackgroundFromMode();
+    testOverlay();
+    testValueLabels();
+  }
 
-    void testValueLabels()
-    {
-        beginTest ("valueType=integer → stepped, and valueLabels recipe renames steps");
+  void testValueLabels() {
+    beginTest(
+        "valueType=integer → stepped, and valueLabels recipe renames steps");
 
-        auto root = juce::File::getSpecialLocation (juce::File::tempDirectory)
-                        .getChildFile ("dmse_converter_valuelabels_test");
-        root.deleteRecursively();
-        root.createDirectory();
-        auto libDir = root.getChildFile ("lib");
-        auto outDir = root.getChildFile ("out");
-        writeSilentWav (libDir.getChildFile ("Samples/a.wav"), 1000);
+    auto root = juce::File::getSpecialLocation(juce::File::tempDirectory)
+                    .getChildFile("dmse_converter_valuelabels_test");
+    root.deleteRecursively();
+    root.createDirectory();
+    auto libDir = root.getChildFile("lib");
+    auto outDir = root.getChildFile("out");
+    writeSilentWav(libDir.getChildFile("Samples/a.wav"), 1000);
 
-        libDir.getChildFile ("Main.dspreset").replaceWithText (R"(<?xml version="1.0"?>
+    libDir.getChildFile("Main.dspreset")
+        .replaceWithText(R"(<?xml version="1.0"?>
 <DecentSampler>
   <ui width="400" height="200"><tab name="main">
     <control x="10" y="10" width="40" height="40" parameterName="Snare - Sustain" minValue="0" maxValue="6" valueType="integer" value="0"/>
@@ -78,117 +74,129 @@ public:
   </groups>
 </DecentSampler>)");
 
-        dmconv::ConvertOptions opts;
-        opts.packSamples = false;
-        opts.libraryDir  = libDir;
-        opts.outDir      = outDir;
-        opts.libraryName = "StepLib";
-        opts.valueLabelsByControl["Snare - Sustain"] = { { 0, "dyn" } };
+    dmconv::ConvertOptions opts;
+    opts.packSamples = false;
+    opts.libraryDir = libDir;
+    opts.outDir = outDir;
+    opts.libraryName = "StepLib";
+    opts.valueLabelsByControl["Snare - Sustain"] = {{0, "dyn"}};
 
-        auto result = dmconv::convertLibrary (opts);
-        expect (result.ok, "conversion should succeed: " + result.errors.joinIntoString ("; "));
+    auto result = dmconv::convertLibrary(opts);
+    expect(result.ok,
+           "conversion should succeed: " + result.errors.joinIntoString("; "));
 
-        auto m = dm::loadManifestFromFolder (outDir.getChildFile ("manifest"));
-        expect (m.ok);
-        const auto& c = m.library.modes.getReference (0).ui.tabs.getReference (0).controls.getReference (0);
-        expect (c.stepped, "integer control converted to a stepped control");
-        expectEquals (c.valueLabels.at (0), juce::String ("dyn"));   // labelled step
-        expect (c.valueLabels.find (1) == c.valueLabels.end(), "unlabelled step keeps its number");
+    auto m = dm::loadManifestFromFolder(outDir.getChildFile("manifest"));
+    expect(m.ok);
+    const auto &c = m.library.modes.getReference(0)
+                        .ui.tabs.getReference(0)
+                        .controls.getReference(0);
+    expect(c.stepped, "integer control converted to a stepped control");
+    expectEquals(c.valueLabels.at(0), juce::String("dyn")); // labelled step
+    expect(c.valueLabels.find(1) == c.valueLabels.end(),
+           "unlabelled step keeps its number");
 
-        root.deleteRecursively();
+    root.deleteRecursively();
+  }
+
+  void testOverlay() {
+    beginTest("overlay recipe embeds the image and sets ui.overlay per mode");
+
+    auto root = juce::File::getSpecialLocation(juce::File::tempDirectory)
+                    .getChildFile("dmse_converter_overlay_test");
+    root.deleteRecursively();
+    root.createDirectory();
+
+    auto libDir = root.getChildFile("lib");
+    auto outDir = root.getChildFile("out");
+    writeSilentWav(libDir.getChildFile("Samples/a.wav"), 1000);
+    for (const char *imgName : {"bg.png", "glass.png"}) {
+      auto f = libDir.getChildFile("Resources").getChildFile(imgName);
+      f.getParentDirectory().createDirectory();
+      f.replaceWithText("png-bytes");
     }
 
-    void testOverlay()
-    {
-        beginTest ("overlay recipe embeds the image and sets ui.overlay per mode");
-
-        auto root = juce::File::getSpecialLocation (juce::File::tempDirectory)
-                        .getChildFile ("dmse_converter_overlay_test");
-        root.deleteRecursively();
-        root.createDirectory();
-
-        auto libDir = root.getChildFile ("lib");
-        auto outDir = root.getChildFile ("out");
-        writeSilentWav (libDir.getChildFile ("Samples/a.wav"), 1000);
-        for (const char* imgName : { "bg.png", "glass.png" })
-        {
-            auto f = libDir.getChildFile ("Resources").getChildFile (imgName);
-            f.getParentDirectory().createDirectory();
-            f.replaceWithText ("png-bytes");
-        }
-
-        auto preset = R"(<?xml version="1.0"?>
+    auto preset = R"(<?xml version="1.0"?>
 <DecentSampler>
   <ui bgImage="Resources/bg.png" width="800" height="300"><tab name="main"></tab></ui>
   <groups attack="0" decay="0" sustain="1" release="0.1">
     <group><sample path="Samples/a.wav" loNote="60" hiNote="60" rootNote="60" length="1000" sampleRate="48000"/></group>
   </groups>
 </DecentSampler>)";
-        libDir.getChildFile ("Main.dspreset").replaceWithText (preset);
+    libDir.getChildFile("Main.dspreset").replaceWithText(preset);
 
-        dmconv::ConvertOptions opts;
-        opts.packSamples = false;
-        opts.libraryDir  = libDir;
-        opts.outDir      = outDir;
-        opts.libraryName = "OverlayLib";
-        opts.overlayDefault     = "Resources/glass.png";   // scalar recipe → every mode
-        opts.haveOverlayDefault = true;
-        opts.overlayScope       = "instrument";            // reaches over the keyboard too
-        opts.menuPopupBackground    = "FF202122";          // dropdown-popup colours → every mode
-        opts.menuPopupText          = "FFE8E9EA";
-        opts.menuPopupHighlight     = "FF0891B2";
-        opts.menuPopupHighlightText = "FFFFFFFF";
+    dmconv::ConvertOptions opts;
+    opts.packSamples = false;
+    opts.libraryDir = libDir;
+    opts.outDir = outDir;
+    opts.libraryName = "OverlayLib";
+    opts.overlayDefault = "Resources/glass.png"; // scalar recipe → every mode
+    opts.haveOverlayDefault = true;
+    opts.overlayScope = "instrument"; // reaches over the keyboard too
+    opts.menuPopupBackground =
+        "FF202122"; // dropdown-popup colours → every mode
+    opts.menuPopupText = "FFE8E9EA";
+    opts.menuPopupHighlight = "FF0891B2";
+    opts.menuPopupHighlightText = "FFFFFFFF";
 
-        auto result = dmconv::convertLibrary (opts);
-        expect (result.ok, "conversion should succeed: " + result.errors.joinIntoString ("; "));
+    auto result = dmconv::convertLibrary(opts);
+    expect(result.ok,
+           "conversion should succeed: " + result.errors.joinIntoString("; "));
 
-        auto m = dm::loadManifestFromFolder (outDir.getChildFile ("manifest"));
-        expect (m.ok);
-        expectEquals (m.library.modes.size(), 1);
-        expectEquals (m.library.modes.getReference (0).ui.overlay,      juce::String ("img:glass"));
-        expectEquals (m.library.modes.getReference (0).ui.overlayScope, juce::String ("instrument"));
-        expectEquals (m.library.modes.getReference (0).ui.menuPopupBackground,    juce::String ("FF202122"));
-        expectEquals (m.library.modes.getReference (0).ui.menuPopupHighlightText, juce::String ("FFFFFFFF"));
-        // Distinct from the background, and the overlay PNG is embedded (survives the
-        // orphan cull because ui.overlay references it).
-        expectEquals (m.library.modes.getReference (0).ui.background, juce::String ("img:bg"));
-        expect (outDir.getChildFile ("images/glass.png").existsAsFile(), "overlay image shipped");
+    auto m = dm::loadManifestFromFolder(outDir.getChildFile("manifest"));
+    expect(m.ok);
+    expectEquals(m.library.modes.size(), 1);
+    expectEquals(m.library.modes.getReference(0).ui.overlay,
+                 juce::String("img:glass"));
+    expectEquals(m.library.modes.getReference(0).ui.overlayScope,
+                 juce::String("instrument"));
+    expectEquals(m.library.modes.getReference(0).ui.menuPopupBackground,
+                 juce::String("FF202122"));
+    expectEquals(m.library.modes.getReference(0).ui.menuPopupHighlightText,
+                 juce::String("FFFFFFFF"));
+    // Distinct from the background, and the overlay PNG is embedded (survives
+    // the orphan cull because ui.overlay references it).
+    expectEquals(m.library.modes.getReference(0).ui.background,
+                 juce::String("img:bg"));
+    expect(outDir.getChildFile("images/glass.png").existsAsFile(),
+           "overlay image shipped");
 
-        root.deleteRecursively();
+    root.deleteRecursively();
+  }
+
+  void testBackgroundFromMode() {
+    beginTest("backgroundFromMode borrows another mode's background and drops "
+              "the orphan");
+
+    auto root = juce::File::getSpecialLocation(juce::File::tempDirectory)
+                    .getChildFile("dmse_converter_bgfrom_test");
+    root.deleteRecursively();
+    root.createDirectory();
+
+    auto libDir = root.getChildFile("lib");
+    auto outDir = root.getChildFile("out");
+    writeSilentWav(libDir.getChildFile("Samples/a.wav"), 1000);
+    for (const char *imgName :
+         {"bgA.png", "bgB.png", "btn.png", "light_off.png", "light_on.png"}) {
+      auto f = libDir.getChildFile("Resources").getChildFile(imgName);
+      f.getParentDirectory().createDirectory();
+      f.replaceWithText("png-bytes");
     }
 
-    void testBackgroundFromMode()
-    {
-        beginTest ("backgroundFromMode borrows another mode's background and drops the orphan");
-
-        auto root = juce::File::getSpecialLocation (juce::File::tempDirectory)
-                        .getChildFile ("dmse_converter_bgfrom_test");
-        root.deleteRecursively();
-        root.createDirectory();
-
-        auto libDir = root.getChildFile ("lib");
-        auto outDir = root.getChildFile ("out");
-        writeSilentWav (libDir.getChildFile ("Samples/a.wav"), 1000);
-        for (const char* imgName : { "bgA.png", "bgB.png", "btn.png", "light_off.png", "light_on.png" })
-        {
-            auto f = libDir.getChildFile ("Resources").getChildFile (imgName);
-            f.getParentDirectory().createDirectory();
-            f.replaceWithText ("png-bytes");
-        }
-
-        auto preset = [] (const char* bg, const char* extra)
-        {
-            return juce::String (R"(<?xml version="1.0"?>
+    auto preset = [](const char *bg, const char *extra) {
+      return juce::String(R"(<?xml version="1.0"?>
 <DecentSampler>
-  <ui bgImage="Resources/)") + bg + R"(" width="800" height="300"><tab name="main">)" + extra + R"(</tab></ui>
+  <ui bgImage="Resources/)") +
+             bg + R"(" width="800" height="300"><tab name="main">)" + extra +
+             R"(</tab></ui>
   <groups attack="0" decay="0" sustain="1" release="0.1">
     <group><sample path="Samples/a.wav" loNote="60" hiNote="60" rootNote="60" length="1000" sampleRate="48000"/></group>
   </groups>
 </DecentSampler>)";
-        };
-        // light_on.png is referenced ONLY via a PATH-binding translationValue (an
-        // image swap, like Elektrisk's drone lights) — the orphan filter must keep it.
-        const char* lamp = R"(
+    };
+    // light_on.png is referenced ONLY via a PATH-binding translationValue (an
+    // image swap, like Elektrisk's drone lights) — the orphan filter must keep
+    // it.
+    const char *lamp = R"(
       <button x="10" y="10" width="20" height="20" style="image" value="0">
         <state name="off" mainImage="Resources/btn.png" hoverImage="Resources/btn.png" clickImage="Resources/btn.png">
           <binding type="control" level="ui" position="0" parameter="PATH" translation="fixed_value" translationValue="Resources/light_off.png"/>
@@ -198,49 +206,54 @@ public:
         </state>
       </button>
       <image x="40" y="10" width="20" height="20" path="Resources/light_off.png"/>)";
-        libDir.getChildFile ("A.dspreset").replaceWithText (preset ("bgA.png", lamp));
-        libDir.getChildFile ("B.dspreset").replaceWithText (preset ("bgB.png", ""));
+    libDir.getChildFile("A.dspreset").replaceWithText(preset("bgA.png", lamp));
+    libDir.getChildFile("B.dspreset").replaceWithText(preset("bgB.png", ""));
 
-        dmconv::ConvertOptions opts;
-        opts.packSamples = false;
-        opts.libraryDir  = libDir;
-        opts.outDir      = outDir;
-        opts.libraryName = "BgLib";
-        opts.backgroundFromMode["B"] = "A";
+    dmconv::ConvertOptions opts;
+    opts.packSamples = false;
+    opts.libraryDir = libDir;
+    opts.outDir = outDir;
+    opts.libraryName = "BgLib";
+    opts.backgroundFromMode["B"] = "A";
 
-        auto result = dmconv::convertLibrary (opts);
-        expect (result.ok, "conversion should succeed: " + result.errors.joinIntoString ("; "));
+    auto result = dmconv::convertLibrary(opts);
+    expect(result.ok,
+           "conversion should succeed: " + result.errors.joinIntoString("; "));
 
-        auto m = dm::loadManifestFromFolder (outDir.getChildFile ("manifest"));
-        expect (m.ok);
-        expectEquals (m.library.modes.size(), 2);
-        expectEquals (m.library.modes.getReference (0).ui.background, juce::String ("img:bgA"));
-        expectEquals (m.library.modes.getReference (1).ui.background, juce::String ("img:bgA"));
+    auto m = dm::loadManifestFromFolder(outDir.getChildFile("manifest"));
+    expect(m.ok);
+    expectEquals(m.library.modes.size(), 2);
+    expectEquals(m.library.modes.getReference(0).ui.background,
+                 juce::String("img:bgA"));
+    expectEquals(m.library.modes.getReference(1).ui.background,
+                 juce::String("img:bgA"));
 
-        expect (outDir.getChildFile ("images/bgA.png").existsAsFile(), "shared background shipped");
-        expect (! outDir.getChildFile ("images/bgB.png").existsAsFile(),
-                "orphaned background neither ships nor embeds");
-        expect (outDir.getChildFile ("images/light_on.png").existsAsFile(),
-                "image referenced only by a PATH binding still ships");
+    expect(outDir.getChildFile("images/bgA.png").existsAsFile(),
+           "shared background shipped");
+    expect(!outDir.getChildFile("images/bgB.png").existsAsFile(),
+           "orphaned background neither ships nor embeds");
+    expect(outDir.getChildFile("images/light_on.png").existsAsFile(),
+           "image referenced only by a PATH binding still ships");
 
-        root.deleteRecursively();
-    }
+    root.deleteRecursively();
+  }
 
-    void testOmnichordStrum()
-    {
-        beginTest ("omnichordStrum rewrites chord-order key-switches into strumKeys");
+  void testOmnichordStrum() {
+    beginTest(
+        "omnichordStrum rewrites chord-order key-switches into strumKeys");
 
-        auto root = juce::File::getSpecialLocation (juce::File::tempDirectory)
-                        .getChildFile ("dmse_converter_omnistrum_test");
-        root.deleteRecursively();
-        root.createDirectory();
+    auto root = juce::File::getSpecialLocation(juce::File::tempDirectory)
+                    .getChildFile("dmse_converter_omnistrum_test");
+    root.deleteRecursively();
+    root.createDirectory();
 
-        auto libDir = root.getChildFile ("lib");
-        writeSilentWav (libDir.getChildFile ("Samples/a.wav"), 1000);
+    auto libDir = root.getChildFile("lib");
+    writeSilentWav(libDir.getChildFile("Samples/a.wav"), 1000);
 
-        // A chord-order menu (options → SEQ_INDEX 0/1), two key-switches selecting
-        // those options, and one chord trigger key.
-        libDir.getChildFile ("Chords.dspreset").replaceWithText (R"(<?xml version="1.0"?>
+    // A chord-order menu (options → SEQ_INDEX 0/1), two key-switches selecting
+    // those options, and one chord trigger key.
+    libDir.getChildFile("Chords.dspreset")
+        .replaceWithText(R"(<?xml version="1.0"?>
 <DecentSampler>
   <ui width="812" height="375">
     <tab name="main">
@@ -270,137 +283,152 @@ public:
   </midi>
 </DecentSampler>)");
 
-        dmconv::ConvertOptions opts;
-        opts.packSamples = false;
-        opts.libraryDir  = libDir;
-        opts.libraryName = "OmniTest";
+    dmconv::ConvertOptions opts;
+    opts.packSamples = false;
+    opts.libraryDir = libDir;
+    opts.libraryName = "OmniTest";
 
-        // Default (off): key-switches stay key-switches, no strum keys. Recipe
-        // "keyboardLabels" still applies (per-mode captions, e.g. the chord modes).
-        {
-            opts.keyboardLabelsByMode["Chords"] = { { 36, 47, "Major" }, { 48, 59, "Minor" } };
-            opts.outDir = root.getChildFile ("out_plain");
-            auto result = dmconv::convertLibrary (opts);
-            expect (result.ok, "conversion should succeed: " + result.errors.joinIntoString ("; "));
-            auto m = dm::loadManifestFromFolder (opts.outDir.getChildFile ("manifest"));
-            expect (m.ok);
-            const auto& mode = m.library.modes.getReference (0);
-            expectEquals (mode.menuKeySwitches.size(), 2);
-            expectEquals (mode.strumKeys.size(), 0);
-            expectEquals (mode.ui.keyboardLabels.size(), 2);
-            expectEquals (mode.ui.keyboardLabels.getReference (0).text, juce::String ("Major"));
-            expectEquals (mode.ui.keyboardLabels.getReference (1).hiNote, 59);
-            opts.keyboardLabelsByMode.clear();   // strum block below asserts the AUTO labels
-        }
-
-        // omnichordStrum: key-switches become strum keys with their option's offset,
-        // the inert chord-order menu disappears, and keyboard labels are emitted
-        // (strum-key captions from the recipe override + option-name fallback, and
-        // a chord-type section from the sequence name).
-        {
-            opts.omnichordStrum = true;
-            opts.strumKeyLabels.add ("A");   // key 24 override; key 26 falls back to "Down"
-            opts.outDir = root.getChildFile ("out_strum");
-            auto result = dmconv::convertLibrary (opts);
-            expect (result.ok, "conversion should succeed: " + result.errors.joinIntoString ("; "));
-            auto m = dm::loadManifestFromFolder (opts.outDir.getChildFile ("manifest"));
-            expect (m.ok);
-            const auto& mode = m.library.modes.getReference (0);
-            expectEquals (mode.menuKeySwitches.size(), 0, "key-switches consumed");
-            expectEquals (mode.sequenceTriggers.size(), 1, "chord triggers kept (as selectors)");
-            expectEquals (mode.strumKeys.size(), 2);
-            expectEquals (mode.strumKeys.getReference (0).note, 24);
-            expectEquals (mode.strumKeys.getReference (0).seqOffset, 0);
-            expectEquals (mode.strumKeys.getReference (1).note, 26);
-            expectEquals (mode.strumKeys.getReference (1).seqOffset, 1);
-
-            expect (mode.ui.tabs.getReference (0).menus.isEmpty(), "chord-order menu removed");
-            expect (mode.ui.strumSpeedReadout.has_value(), "readout takes the menu's spot");
-            expectEquals (mode.ui.strumSpeedReadout->x, 124);
-            expectEquals (mode.ui.strumSpeedReadout->y, 120 + 50);   // + default uiYOffset
-            expectEquals (mode.ui.strumSpeedReadout->width, 162);
-            expectEquals (mode.ui.strumSpeedReadout->height, 22);
-            const auto& labels = mode.ui.keyboardLabels;
-            expectEquals (labels.size(), 3);
-            expectEquals (labels.getReference (0).loNote, 24);
-            expectEquals (labels.getReference (0).text, juce::String ("A"));
-            expectEquals (labels.getReference (1).loNote, 26);
-            expectEquals (labels.getReference (1).text, juce::String ("Down"));
-            expectEquals (labels.getReference (2).loNote, 36);
-            expectEquals (labels.getReference (2).hiNote, 36);
-            expectEquals (labels.getReference (2).text, juce::String ("Up"));   // seq name, no root prefix to strip
-        }
-
-        root.deleteRecursively();
+    // Default (off): key-switches stay key-switches, no strum keys. Recipe
+    // "keyboardLabels" still applies (per-mode captions, e.g. the chord modes).
+    {
+      opts.keyboardLabelsByMode["Chords"] = {{36, 47, "Major"},
+                                             {48, 59, "Minor"}};
+      opts.outDir = root.getChildFile("out_plain");
+      auto result = dmconv::convertLibrary(opts);
+      expect(result.ok, "conversion should succeed: " +
+                            result.errors.joinIntoString("; "));
+      auto m = dm::loadManifestFromFolder(opts.outDir.getChildFile("manifest"));
+      expect(m.ok);
+      const auto &mode = m.library.modes.getReference(0);
+      expectEquals(mode.menuKeySwitches.size(), 2);
+      expectEquals(mode.strumKeys.size(), 0);
+      expectEquals(mode.ui.keyboardLabels.size(), 2);
+      expectEquals(mode.ui.keyboardLabels.getReference(0).text,
+                   juce::String("Major"));
+      expectEquals(mode.ui.keyboardLabels.getReference(1).hiNote, 59);
+      opts.keyboardLabelsByMode
+          .clear(); // strum block below asserts the AUTO labels
     }
 
-    void testSplitManifestOutput()
+    // omnichordStrum: key-switches become strum keys with their option's
+    // offset, the inert chord-order menu disappears, and keyboard labels are
+    // emitted (strum-key captions from the recipe override + option-name
+    // fallback, and a chord-type section from the sequence name).
     {
-        beginTest ("split manifest/ folder is the sole manifest output and round-trips");
+      opts.omnichordStrum = true;
+      opts.strumKeyLabels.add(
+          "A"); // key 24 override; key 26 falls back to "Down"
+      opts.outDir = root.getChildFile("out_strum");
+      auto result = dmconv::convertLibrary(opts);
+      expect(result.ok, "conversion should succeed: " +
+                            result.errors.joinIntoString("; "));
+      auto m = dm::loadManifestFromFolder(opts.outDir.getChildFile("manifest"));
+      expect(m.ok);
+      const auto &mode = m.library.modes.getReference(0);
+      expectEquals(mode.menuKeySwitches.size(), 0, "key-switches consumed");
+      expectEquals(mode.sequenceTriggers.size(), 1,
+                   "chord triggers kept (as selectors)");
+      expectEquals(mode.strumKeys.size(), 2);
+      expectEquals(mode.strumKeys.getReference(0).note, 24);
+      expectEquals(mode.strumKeys.getReference(0).seqOffset, 0);
+      expectEquals(mode.strumKeys.getReference(1).note, 26);
+      expectEquals(mode.strumKeys.getReference(1).seqOffset, 1);
 
-        auto root = juce::File::getSpecialLocation (juce::File::tempDirectory)
-                        .getChildFile ("dmse_converter_split_test");
-        root.deleteRecursively();
-        root.createDirectory();
+      expect(mode.ui.tabs.getReference(0).menus.isEmpty(),
+             "chord-order menu removed");
+      expect(mode.ui.strumSpeedReadout.has_value(),
+             "readout takes the menu's spot");
+      expectEquals(mode.ui.strumSpeedReadout->x, 124);
+      expectEquals(mode.ui.strumSpeedReadout->y,
+                   120 + 50); // + default uiYOffset
+      expectEquals(mode.ui.strumSpeedReadout->width, 162);
+      expectEquals(mode.ui.strumSpeedReadout->height, 22);
+      const auto &labels = mode.ui.keyboardLabels;
+      expectEquals(labels.size(), 3);
+      expectEquals(labels.getReference(0).loNote, 24);
+      expectEquals(labels.getReference(0).text, juce::String("A"));
+      expectEquals(labels.getReference(1).loNote, 26);
+      expectEquals(labels.getReference(1).text, juce::String("Down"));
+      expectEquals(labels.getReference(2).loNote, 36);
+      expectEquals(labels.getReference(2).hiNote, 36);
+      expectEquals(labels.getReference(2).text,
+                   juce::String("Up")); // seq name, no root prefix to strip
+    }
 
-        auto libDir = root.getChildFile ("lib");
-        auto outDir = root.getChildFile ("out");
-        writeSilentWav (libDir.getChildFile ("Samples/a.wav"), 1000);
+    root.deleteRecursively();
+  }
 
-        // Two presets → two modes, exercising per-mode file splitting + the index list.
-        const juce::String preset (R"(<?xml version="1.0"?>
+  void testSplitManifestOutput() {
+    beginTest(
+        "split manifest/ folder is the sole manifest output and round-trips");
+
+    auto root = juce::File::getSpecialLocation(juce::File::tempDirectory)
+                    .getChildFile("dmse_converter_split_test");
+    root.deleteRecursively();
+    root.createDirectory();
+
+    auto libDir = root.getChildFile("lib");
+    auto outDir = root.getChildFile("out");
+    writeSilentWav(libDir.getChildFile("Samples/a.wav"), 1000);
+
+    // Two presets → two modes, exercising per-mode file splitting + the index
+    // list.
+    const juce::String preset(R"(<?xml version="1.0"?>
 <DecentSampler>
   <groups attack="0" decay="0" sustain="1" release="0.1">
     <group><sample path="Samples/a.wav" loNote="60" hiNote="60" rootNote="60" length="1000" sampleRate="48000"/></group>
   </groups>
 </DecentSampler>)");
-        libDir.getChildFile ("Bass.dspreset").replaceWithText (preset);
-        libDir.getChildFile ("Keys.dspreset").replaceWithText (preset);
+    libDir.getChildFile("Bass.dspreset").replaceWithText(preset);
+    libDir.getChildFile("Keys.dspreset").replaceWithText(preset);
 
-        dmconv::ConvertOptions opts;
-        opts.packSamples = false;   // these tests assert on loose per-sample FLACs
-        opts.libraryDir  = libDir;
-        opts.outDir      = outDir;
-        opts.libraryName = "TestLib";
+    dmconv::ConvertOptions opts;
+    opts.packSamples = false; // these tests assert on loose per-sample FLACs
+    opts.libraryDir = libDir;
+    opts.outDir = outDir;
+    opts.libraryName = "TestLib";
 
-        auto result = dmconv::convertLibrary (opts);
-        expect (result.ok, "conversion should succeed: " + result.errors.joinIntoString ("; "));
+    auto result = dmconv::convertLibrary(opts);
+    expect(result.ok,
+           "conversion should succeed: " + result.errors.joinIntoString("; "));
 
-        auto manifestDir = outDir.getChildFile ("manifest");
-        expect (manifestDir.getChildFile ("index.json").existsAsFile(), "index.json written");
-        expectEquals (manifestDir.getChildFile ("modes")
-                          .getNumberOfChildFiles (juce::File::findFiles, "*.json"),
-                      2, "one file per mode");
+    auto manifestDir = outDir.getChildFile("manifest");
+    expect(manifestDir.getChildFile("index.json").existsAsFile(),
+           "index.json written");
+    expectEquals(manifestDir.getChildFile("modes").getNumberOfChildFiles(
+                     juce::File::findFiles, "*.json"),
+                 2, "one file per mode");
 
-        // Split-only output: no single manifest.json is written any more.
-        expect (! outDir.getChildFile ("manifest.json").existsAsFile(), "no single manifest.json emitted");
+    // Split-only output: no single manifest.json is written any more.
+    expect(!outDir.getChildFile("manifest.json").existsAsFile(),
+           "no single manifest.json emitted");
 
-        // The split folder reloads into a full 2-mode library.
-        auto split = dm::loadManifestFromFolder (manifestDir);
-        expect (split.ok, "split manifest reloads: " + split.errors.joinIntoString ("; "));
-        expectEquals (split.library.modes.size(), 2);
-        for (const auto& m : split.library.modes)
-            expect (! m.groups.isEmpty() && ! m.groups.getReference (0).samples.isEmpty(),
-                    "each mode carries its samples through the split round-trip");
+    // The split folder reloads into a full 2-mode library.
+    auto split = dm::loadManifestFromFolder(manifestDir);
+    expect(split.ok,
+           "split manifest reloads: " + split.errors.joinIntoString("; "));
+    expectEquals(split.library.modes.size(), 2);
+    for (const auto &m : split.library.modes)
+      expect(!m.groups.isEmpty() && !m.groups.getReference(0).samples.isEmpty(),
+             "each mode carries its samples through the split round-trip");
 
-        root.deleteRecursively();
-    }
+    root.deleteRecursively();
+  }
 
-    void testUiYOffset()
-    {
-        beginTest ("UI element y shifted by the menu-bar offset");
+  void testUiYOffset() {
+    beginTest("UI element y shifted by the menu-bar offset");
 
-        auto root = juce::File::getSpecialLocation (juce::File::tempDirectory)
-                        .getChildFile ("dmse_converter_uiy_test");
-        root.deleteRecursively();
-        root.createDirectory();
+    auto root = juce::File::getSpecialLocation(juce::File::tempDirectory)
+                    .getChildFile("dmse_converter_uiy_test");
+    root.deleteRecursively();
+    root.createDirectory();
 
-        auto libDir = root.getChildFile ("lib");
-        auto outDir = root.getChildFile ("out");
-        writeSilentWav (libDir.getChildFile ("Samples/a.wav"), 1000);
+    auto libDir = root.getChildFile("lib");
+    auto outDir = root.getChildFile("out");
+    writeSilentWav(libDir.getChildFile("Samples/a.wav"), 1000);
 
-        // A control with no skin → no image asset to resolve.
-        libDir.getChildFile ("Kit.dspreset").replaceWithText (R"(<?xml version="1.0"?>
+    // A control with no skin → no image asset to resolve.
+    libDir.getChildFile("Kit.dspreset").replaceWithText(R"(<?xml version="1.0"?>
 <DecentSampler>
   <ui width="812" height="375">
     <tab name="main">
@@ -410,41 +438,42 @@ public:
   <groups><group><sample path="Samples/a.wav" loNote="60" hiNote="60" rootNote="60" length="1000" sampleRate="48000"/></group></groups>
 </DecentSampler>)");
 
-        dmconv::ConvertOptions opts;
-        opts.packSamples = false;   // these tests assert on loose per-sample FLACs
-        opts.libraryDir = libDir;
-        opts.outDir     = outDir;
-        // opts.uiYOffset defaults to 100
+    dmconv::ConvertOptions opts;
+    opts.packSamples = false; // these tests assert on loose per-sample FLACs
+    opts.libraryDir = libDir;
+    opts.outDir = outDir;
+    // opts.uiYOffset defaults to 100
 
-        auto result = dmconv::convertLibrary (opts);
-        expect (result.ok, result.errors.joinIntoString ("; "));
+    auto result = dmconv::convertLibrary(opts);
+    expect(result.ok, result.errors.joinIntoString("; "));
 
-        auto reloaded = dm::loadManifestFromFolder (outDir.getChildFile ("manifest"));
-        expect (reloaded.ok);
-        const auto& tab = reloaded.library.modes.getReference (0).ui.tabs.getReference (0);
-        expectEquals (tab.controls.size(), 1);
-        expectEquals (tab.controls.getReference (0).rect.y, 60);    // 10 + 50 offset
-        expectEquals (tab.controls.getReference (0).rect.x, 10);    // x unchanged
-    }
+    auto reloaded = dm::loadManifestFromFolder(outDir.getChildFile("manifest"));
+    expect(reloaded.ok);
+    const auto &tab =
+        reloaded.library.modes.getReference(0).ui.tabs.getReference(0);
+    expectEquals(tab.controls.size(), 1);
+    expectEquals(tab.controls.getReference(0).rect.y, 60); // 10 + 50 offset
+    expectEquals(tab.controls.getReference(0).rect.x, 10); // x unchanged
+  }
 
-    void testImageEmbedding()
-    {
-        beginTest ("UI images embedded verbatim (not transcoded)");
+  void testImageEmbedding() {
+    beginTest("UI images embedded verbatim (not transcoded)");
 
-        auto root = juce::File::getSpecialLocation (juce::File::tempDirectory)
-                        .getChildFile ("dmse_converter_img_test");
-        root.deleteRecursively();
-        root.createDirectory();
+    auto root = juce::File::getSpecialLocation(juce::File::tempDirectory)
+                    .getChildFile("dmse_converter_img_test");
+    root.deleteRecursively();
+    root.createDirectory();
 
-        auto libDir = root.getChildFile ("lib");
-        auto outDir = root.getChildFile ("out");
+    auto libDir = root.getChildFile("lib");
+    auto outDir = root.getChildFile("out");
 
-        writeSilentWav (libDir.getChildFile ("Samples/a.wav"), 1000);
-        auto bg = libDir.getChildFile ("Resources/bg.png");
-        bg.getParentDirectory().createDirectory();   // replaceWithText won't create dirs
-        bg.replaceWithText ("not-really-a-png-but-bytes");
+    writeSilentWav(libDir.getChildFile("Samples/a.wav"), 1000);
+    auto bg = libDir.getChildFile("Resources/bg.png");
+    bg.getParentDirectory()
+        .createDirectory(); // replaceWithText won't create dirs
+    bg.replaceWithText("not-really-a-png-but-bytes");
 
-        libDir.getChildFile ("Kit.dspreset").replaceWithText (R"(<?xml version="1.0"?>
+    libDir.getChildFile("Kit.dspreset").replaceWithText(R"(<?xml version="1.0"?>
 <DecentSampler>
   <ui bgImage="Resources/bg.png" width="800" height="300">
     <tab name="main"/>
@@ -454,45 +483,51 @@ public:
   </groups>
 </DecentSampler>)");
 
-        dmconv::ConvertOptions opts;
-        opts.packSamples = false;   // these tests assert on loose per-sample FLACs
-        opts.libraryDir  = libDir;
-        opts.outDir      = outDir;
-        opts.libraryName = "TestLib";
+    dmconv::ConvertOptions opts;
+    opts.packSamples = false; // these tests assert on loose per-sample FLACs
+    opts.libraryDir = libDir;
+    opts.outDir = outDir;
+    opts.libraryName = "TestLib";
 
-        auto result = dmconv::convertLibrary (opts);
-        expect (result.ok, "conversion should succeed: " + result.errors.joinIntoString ("; "));
+    auto result = dmconv::convertLibrary(opts);
+    expect(result.ok,
+           "conversion should succeed: " + result.errors.joinIntoString("; "));
 
-        expect (outDir.getChildFile ("images/bg.png").existsAsFile(), "image copied verbatim");
-        expect (! outDir.getChildFile ("images/bg.flac").existsAsFile(), "image must not be transcoded");
-        expect (outDir.getChildFile ("samples/a.flac").existsAsFile(), "audio still transcoded");
+    expect(outDir.getChildFile("images/bg.png").existsAsFile(),
+           "image copied verbatim");
+    expect(!outDir.getChildFile("images/bg.flac").existsAsFile(),
+           "image must not be transcoded");
+    expect(outDir.getChildFile("samples/a.flac").existsAsFile(),
+           "audio still transcoded");
 
-        // Byte-for-byte identical (no modification).
-        expectEquals (outDir.getChildFile ("images/bg.png").loadFileAsString(),
-                      juce::String ("not-really-a-png-but-bytes"));
+    // Byte-for-byte identical (no modification).
+    expectEquals(outDir.getChildFile("images/bg.png").loadFileAsString(),
+                 juce::String("not-really-a-png-but-bytes"));
 
-        auto reloaded = dm::loadManifestFromFolder (outDir.getChildFile ("manifest"));
-        expect (reloaded.ok);
-        expectEquals (reloaded.library.modes.getReference (0).ui.background, juce::String ("img:bg"));
-    }
+    auto reloaded = dm::loadManifestFromFolder(outDir.getChildFile("manifest"));
+    expect(reloaded.ok);
+    expectEquals(reloaded.library.modes.getReference(0).ui.background,
+                 juce::String("img:bg"));
+  }
 
-    void testLengthOverride()
-    {
-        beginTest ("audio length is authoritative; mismatch is summarised, audio untouched");
+  void testLengthOverride() {
+    beginTest("audio length is authoritative; mismatch is summarised, audio "
+              "untouched");
 
-        auto root = juce::File::getSpecialLocation (juce::File::tempDirectory)
-                        .getChildFile ("dmse_converter_test");
-        root.deleteRecursively();
-        root.createDirectory();
+    auto root = juce::File::getSpecialLocation(juce::File::tempDirectory)
+                    .getChildFile("dmse_converter_test");
+    root.deleteRecursively();
+    root.createDirectory();
 
-        auto libDir = root.getChildFile ("lib");
-        auto outDir = root.getChildFile ("out");
+    auto libDir = root.getChildFile("lib");
+    auto outDir = root.getChildFile("out");
 
-        // a.wav: 1000 frames, declared 1000 (matches). b.wav: 500 frames, declared 999.
-        writeSilentWav (libDir.getChildFile ("Samples/a.wav"), 1000);
-        writeSilentWav (libDir.getChildFile ("Samples/b.wav"), 500);
+    // a.wav: 1000 frames, declared 1000 (matches). b.wav: 500 frames, declared
+    // 999.
+    writeSilentWav(libDir.getChildFile("Samples/a.wav"), 1000);
+    writeSilentWav(libDir.getChildFile("Samples/b.wav"), 500);
 
-        libDir.getChildFile ("Kit.dspreset").replaceWithText (R"(<?xml version="1.0"?>
+    libDir.getChildFile("Kit.dspreset").replaceWithText(R"(<?xml version="1.0"?>
 <DecentSampler>
   <groups attack="0" decay="0" sustain="1" release="0.1">
     <group>
@@ -502,60 +537,67 @@ public:
   </groups>
 </DecentSampler>)");
 
-        dmconv::ConvertOptions opts;
-        opts.packSamples = false;   // these tests assert on loose per-sample FLACs
-        opts.libraryDir = libDir;
-        opts.outDir     = outDir;
-        opts.libraryName = "TestLib";
+    dmconv::ConvertOptions opts;
+    opts.packSamples = false; // these tests assert on loose per-sample FLACs
+    opts.libraryDir = libDir;
+    opts.outDir = outDir;
+    opts.libraryName = "TestLib";
 
-        auto result = dmconv::convertLibrary (opts);
+    auto result = dmconv::convertLibrary(opts);
 
-        expect (result.ok, "conversion should succeed: " + result.errors.joinIntoString ("; "));
-        expectEquals (result.assetsTranscoded, 2);
-        expect (outDir.getChildFile ("manifest/index.json").existsAsFile(), "split manifest written");
-        expect (! outDir.getChildFile ("manifest.json").existsAsFile(), "no single manifest.json emitted");
-        expect (outDir.getChildFile ("samples/a.flac").existsAsFile(), "matching file still transcoded");
-        expect (outDir.getChildFile ("samples/b.flac").existsAsFile(), "mismatching file still transcoded");
+    expect(result.ok,
+           "conversion should succeed: " + result.errors.joinIntoString("; "));
+    expectEquals(result.assetsTranscoded, 2);
+    expect(outDir.getChildFile("manifest/index.json").existsAsFile(),
+           "split manifest written");
+    expect(!outDir.getChildFile("manifest.json").existsAsFile(),
+           "no single manifest.json emitted");
+    expect(outDir.getChildFile("samples/a.flac").existsAsFile(),
+           "matching file still transcoded");
+    expect(outDir.getChildFile("samples/b.flac").existsAsFile(),
+           "mismatching file still transcoded");
 
-        // b's declared length (999) disagrees with its real length (500) → summarised.
-        expect (anyWarningContains (result.warnings, "b.flac"), "expected the override example to cite b.flac");
-        expect (anyWarningContains (result.warnings, "500"));
-        expect (anyWarningContains (result.warnings, "999"));
-        expect (! anyWarningContains (result.warnings, "a.flac"),
-                "matching file should not appear in the override summary");
+    // b's declared length (999) disagrees with its real length (500) →
+    // summarised.
+    expect(anyWarningContains(result.warnings, "b.flac"),
+           "expected the override example to cite b.flac");
+    expect(anyWarningContains(result.warnings, "500"));
+    expect(anyWarningContains(result.warnings, "999"));
+    expect(!anyWarningContains(result.warnings, "a.flac"),
+           "matching file should not appear in the override summary");
 
-        // The manifest now carries the ACTUAL decoded lengths, not the .dspreset's.
-        auto reloaded = dm::loadManifestFromFolder (outDir.getChildFile ("manifest"));
-        expect (reloaded.ok, "generated manifest should reload");
-        int lenA = -1, lenB = -1;
-        for (const auto& g : reloaded.library.modes.getReference (0).groups)
-            for (const auto& s : g.samples)
-            {
-                if (s.source == "flac:a" && s.lengthFrames) lenA = *s.lengthFrames;
-                if (s.source == "flac:b" && s.lengthFrames) lenB = *s.lengthFrames;
-            }
-        expectEquals (lenA, 1000); // matched declaration, unchanged
-        expectEquals (lenB, 500);  // overridden from the wrong 999
+    // The manifest now carries the ACTUAL decoded lengths, not the .dspreset's.
+    auto reloaded = dm::loadManifestFromFolder(outDir.getChildFile("manifest"));
+    expect(reloaded.ok, "generated manifest should reload");
+    int lenA = -1, lenB = -1;
+    for (const auto &g : reloaded.library.modes.getReference(0).groups)
+      for (const auto &s : g.samples) {
+        if (s.source == "flac:a" && s.lengthFrames)
+          lenA = *s.lengthFrames;
+        if (s.source == "flac:b" && s.lengthFrames)
+          lenB = *s.lengthFrames;
+      }
+    expectEquals(lenA, 1000); // matched declaration, unchanged
+    expectEquals(lenB, 500);  // overridden from the wrong 999
 
-        root.deleteRecursively();
-    }
+    root.deleteRecursively();
+  }
 
-    void testReverbGain()
-    {
-        beginTest ("--reverb-gain bakes outputLevel into convolution effects only");
+  void testReverbGain() {
+    beginTest("--reverb-gain bakes outputLevel into convolution effects only");
 
-        auto root = juce::File::getSpecialLocation (juce::File::tempDirectory)
-                        .getChildFile ("dmse_converter_reverb_test");
-        root.deleteRecursively();
-        root.createDirectory();
+    auto root = juce::File::getSpecialLocation(juce::File::tempDirectory)
+                    .getChildFile("dmse_converter_reverb_test");
+    root.deleteRecursively();
+    root.createDirectory();
 
-        auto libDir = root.getChildFile ("lib");
-        auto outDir = root.getChildFile ("out");
+    auto libDir = root.getChildFile("lib");
+    auto outDir = root.getChildFile("out");
 
-        writeSilentWav (libDir.getChildFile ("Samples/a.wav"), 1000);
-        writeSilentWav (libDir.getChildFile ("IR/space.wav"), 200);
+    writeSilentWav(libDir.getChildFile("Samples/a.wav"), 1000);
+    writeSilentWav(libDir.getChildFile("IR/space.wav"), 200);
 
-        libDir.getChildFile ("Kit.dspreset").replaceWithText (R"(<?xml version="1.0"?>
+    libDir.getChildFile("Kit.dspreset").replaceWithText(R"(<?xml version="1.0"?>
 <DecentSampler>
   <groups attack="0" decay="0" sustain="1" release="0.1">
     <group>
@@ -568,58 +610,58 @@ public:
   </effects>
 </DecentSampler>)");
 
-        dmconv::ConvertOptions opts;
-        opts.packSamples = false;   // these tests assert on loose per-sample FLACs
-        opts.libraryDir   = libDir;
-        opts.outDir       = outDir;
-        opts.libraryName  = "TestLib";
-        opts.reverbGainDb = 12.0;
+    dmconv::ConvertOptions opts;
+    opts.packSamples = false; // these tests assert on loose per-sample FLACs
+    opts.libraryDir = libDir;
+    opts.outDir = outDir;
+    opts.libraryName = "TestLib";
+    opts.reverbGainDb = 12.0;
 
-        auto result = dmconv::convertLibrary (opts);
-        expect (result.ok, "conversion should succeed: " + result.errors.joinIntoString ("; "));
+    auto result = dmconv::convertLibrary(opts);
+    expect(result.ok,
+           "conversion should succeed: " + result.errors.joinIntoString("; "));
 
-        auto reloaded = dm::loadManifestFromFolder (outDir.getChildFile ("manifest"));
-        expect (reloaded.ok, "generated manifest should reload");
+    auto reloaded = dm::loadManifestFromFolder(outDir.getChildFile("manifest"));
+    expect(reloaded.ok, "generated manifest should reload");
 
-        const auto& effects = reloaded.library.modes.getReference (0).effects;
-        bool checkedConvolution = false, checkedLowpass = false;
-        for (const auto& e : effects)
-        {
-            if (e.type == "convolution")
-            {
-                checkedConvolution = true;
-                expect (e.outputLevel.has_value(), "convolution should carry baked outputLevel");
-                expectWithinAbsoluteError (e.outputLevel.value_or (0.0), 12.0, 1.0e-6);
-                expect (e.wet.has_value() && std::abs (*e.wet - 0.3) < 1.0e-6, "wet preserved");
-            }
-            if (e.type == "lowpass")
-            {
-                checkedLowpass = true;
-                expect (! e.outputLevel.has_value(), "reverb gain must not touch the lowpass");
-            }
-        }
-        expect (checkedConvolution, "expected a convolution effect");
-        expect (checkedLowpass, "expected a lowpass effect");
-
-        root.deleteRecursively();
+    const auto &effects = reloaded.library.modes.getReference(0).effects;
+    bool checkedConvolution = false, checkedLowpass = false;
+    for (const auto &e : effects) {
+      if (e.type == "convolution") {
+        checkedConvolution = true;
+        expect(e.outputLevel.has_value(),
+               "convolution should carry baked outputLevel");
+        expectWithinAbsoluteError(e.outputLevel.value_or(0.0), 12.0, 1.0e-6);
+        expect(e.wet.has_value() && std::abs(*e.wet - 0.3) < 1.0e-6,
+               "wet preserved");
+      }
+      if (e.type == "lowpass") {
+        checkedLowpass = true;
+        expect(!e.outputLevel.has_value(),
+               "reverb gain must not touch the lowpass");
+      }
     }
+    expect(checkedConvolution, "expected a convolution effect");
+    expect(checkedLowpass, "expected a lowpass effect");
 
-    void testLoopValidation()
-    {
-        beginTest ("out-of-range loops disabled (warn-only, audio untouched)");
+    root.deleteRecursively();
+  }
 
-        auto root = juce::File::getSpecialLocation (juce::File::tempDirectory)
-                        .getChildFile ("dmse_converter_loop_test");
-        root.deleteRecursively();
-        root.createDirectory();
+  void testLoopValidation() {
+    beginTest("out-of-range loops disabled (warn-only, audio untouched)");
 
-        auto libDir = root.getChildFile ("lib");
-        auto outDir = root.getChildFile ("out");
+    auto root = juce::File::getSpecialLocation(juce::File::tempDirectory)
+                    .getChildFile("dmse_converter_loop_test");
+    root.deleteRecursively();
+    root.createDirectory();
 
-        writeSilentWav (libDir.getChildFile ("Samples/long.wav"), 1000);
-        writeSilentWav (libDir.getChildFile ("Samples/short.wav"), 1000);
+    auto libDir = root.getChildFile("lib");
+    auto outDir = root.getChildFile("out");
 
-        libDir.getChildFile ("Kit.dspreset").replaceWithText (R"(<?xml version="1.0"?>
+    writeSilentWav(libDir.getChildFile("Samples/long.wav"), 1000);
+    writeSilentWav(libDir.getChildFile("Samples/short.wav"), 1000);
+
+    libDir.getChildFile("Kit.dspreset").replaceWithText(R"(<?xml version="1.0"?>
 <DecentSampler>
   <groups attack="0" decay="0" sustain="1" release="0.1">
     <group>
@@ -629,53 +671,52 @@ public:
   </groups>
 </DecentSampler>)");
 
-        dmconv::ConvertOptions opts;
-        opts.packSamples = false;   // these tests assert on loose per-sample FLACs
-        opts.libraryDir  = libDir;
-        opts.outDir      = outDir;
-        opts.libraryName = "TestLib";
+    dmconv::ConvertOptions opts;
+    opts.packSamples = false; // these tests assert on loose per-sample FLACs
+    opts.libraryDir = libDir;
+    opts.outDir = outDir;
+    opts.libraryName = "TestLib";
 
-        auto result = dmconv::convertLibrary (opts);
-        expect (result.ok, "conversion should succeed: " + result.errors.joinIntoString ("; "));
+    auto result = dmconv::convertLibrary(opts);
+    expect(result.ok,
+           "conversion should succeed: " + result.errors.joinIntoString("; "));
 
-        auto reloaded = dm::loadManifestFromFolder (outDir.getChildFile ("manifest"));
-        expect (reloaded.ok);
+    auto reloaded = dm::loadManifestFromFolder(outDir.getChildFile("manifest"));
+    expect(reloaded.ok);
 
-        bool checkedLong = false, checkedShort = false;
-        for (const auto& g : reloaded.library.modes.getReference (0).groups)
-            for (const auto& s : g.samples)
-            {
-                if (s.source == "flac:long")
-                {
-                    checkedLong = true;
-                    expect (s.loop.enabled, "valid loop should be kept");
-                }
-                if (s.source == "flac:short")
-                {
-                    checkedShort = true;
-                    expect (! s.loop.enabled, "out-of-range loop should be disabled");
-                }
-            }
-        expect (checkedLong && checkedShort);
-        expect (anyWarningContains (result.warnings, "short.flac"), "expected a loop warning for short.flac");
+    bool checkedLong = false, checkedShort = false;
+    for (const auto &g : reloaded.library.modes.getReference(0).groups)
+      for (const auto &s : g.samples) {
+        if (s.source == "flac:long") {
+          checkedLong = true;
+          expect(s.loop.enabled, "valid loop should be kept");
+        }
+        if (s.source == "flac:short") {
+          checkedShort = true;
+          expect(!s.loop.enabled, "out-of-range loop should be disabled");
+        }
+      }
+    expect(checkedLong && checkedShort);
+    expect(anyWarningContains(result.warnings, "short.flac"),
+           "expected a loop warning for short.flac");
 
-        root.deleteRecursively();
-    }
+    root.deleteRecursively();
+  }
 
-    void testSamplePack()
-    {
-        beginTest ("default pack mode emits samples.pak + index instead of loose FLACs");
+  void testSamplePack() {
+    beginTest(
+        "default pack mode emits samples.pak + index instead of loose FLACs");
 
-        auto root = juce::File::getSpecialLocation (juce::File::tempDirectory)
-                        .getChildFile ("dmse_converter_pack_test");
-        root.deleteRecursively();
-        root.createDirectory();
+    auto root = juce::File::getSpecialLocation(juce::File::tempDirectory)
+                    .getChildFile("dmse_converter_pack_test");
+    root.deleteRecursively();
+    root.createDirectory();
 
-        auto libDir = root.getChildFile ("lib");
-        auto outDir = root.getChildFile ("out");
-        writeSilentWav (libDir.getChildFile ("Samples/a.wav"), 1000);
+    auto libDir = root.getChildFile("lib");
+    auto outDir = root.getChildFile("out");
+    writeSilentWav(libDir.getChildFile("Samples/a.wav"), 1000);
 
-        libDir.getChildFile ("Kit.dspreset").replaceWithText (R"(<?xml version="1.0"?>
+    libDir.getChildFile("Kit.dspreset").replaceWithText(R"(<?xml version="1.0"?>
 <DecentSampler>
   <groups attack="0" decay="0" sustain="1" release="0.1">
     <group>
@@ -684,37 +725,44 @@ public:
   </groups>
 </DecentSampler>)");
 
-        dmconv::ConvertOptions opts;   // packSamples defaults TRUE — that is the point
-        opts.libraryDir = libDir;
-        opts.outDir     = outDir;
+    dmconv::ConvertOptions
+        opts; // packSamples defaults TRUE — that is the point
+    opts.libraryDir = libDir;
+    opts.outDir = outDir;
 
-        auto result = dmconv::convertLibrary (opts);
-        expect (result.ok, "pack conversion should succeed: " + result.errors.joinIntoString ("; "));
+    auto result = dmconv::convertLibrary(opts);
+    expect(result.ok, "pack conversion should succeed: " +
+                          result.errors.joinIntoString("; "));
 
-        expect (! outDir.getChildFile ("samples/a.flac").existsAsFile(),
-                "packed mode must not leave loose sample FLACs");
-        expect (outDir.getChildFile ("samples/samples.pak").existsAsFile(), "pack written");
-        expect (outDir.getChildFile ("samples/samples.pak.json").existsAsFile(), "pack index written");
+    expect(!outDir.getChildFile("samples/a.flac").existsAsFile(),
+           "packed mode must not leave loose sample FLACs");
+    expect(outDir.getChildFile("samples/samples.pak").existsAsFile(),
+           "pack written");
+    expect(outDir.getChildFile("samples/samples.pak.json").existsAsFile(),
+           "pack index written");
 
-        juce::var idx;
-        expect (juce::JSON::parse (outDir.getChildFile ("samples/samples.pak.json").loadFileAsString(),
-                                   idx).wasOk(), "pack index parses");
-        auto* entries = idx.getArray();
-        expect (entries != nullptr && entries->size() == 1, "one pack entry");
-        if (entries != nullptr && ! entries->isEmpty())
-        {
-            const auto& e = entries->getReference (0);
-            expectEquals (e.getProperty ("id", "").toString(), juce::String ("flac:a"));
-            const int off = (int) e.getProperty ("o", -1);
-            const int len = (int) e.getProperty ("l", -1);
-            expect (off >= 0 && len > 0, "entry has offset+length");
-            expect ((juce::int64) (off + len) <= outDir.getChildFile ("samples/samples.pak").getSize(),
-                    "entry fits inside the pack");
-        }
-
-        root.deleteRecursively();
+    juce::var idx;
+    expect(
+        juce::JSON::parse(
+            outDir.getChildFile("samples/samples.pak.json").loadFileAsString(),
+            idx)
+            .wasOk(),
+        "pack index parses");
+    auto *entries = idx.getArray();
+    expect(entries != nullptr && entries->size() == 1, "one pack entry");
+    if (entries != nullptr && !entries->isEmpty()) {
+      const auto &e = entries->getReference(0);
+      expectEquals(e.getProperty("id", "").toString(), juce::String("flac:a"));
+      const int off = (int)e.getProperty("o", -1);
+      const int len = (int)e.getProperty("l", -1);
+      expect(off >= 0 && len > 0, "entry has offset+length");
+      expect((juce::int64)(off + len) <=
+                 outDir.getChildFile("samples/samples.pak").getSize(),
+             "entry fits inside the pack");
     }
 
+    root.deleteRecursively();
+  }
 };
 
 ConverterTests converterTests;
