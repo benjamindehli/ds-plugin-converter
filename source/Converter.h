@@ -64,6 +64,13 @@ struct ConvertOptions {
   // For Elektrisk Salmesykkel (Yamaha L-20D).
   std::optional<dm::AirSupply> airSupply;
 
+  // Per-key air from MPE pressure (config "keyPressure": {threshold,
+  // travelCurve, levelDbBass, levelDbTreble, levelCurve, pitchCents,
+  // brightness, smoothingMs, tags}, all optional) — written to the manifest's
+  // library-level keyPressure, which makes the engine offer the settings
+  // toggle. For Elektrisk Salmesykkel.
+  std::optional<dm::KeyPressure> keyPressure;
+
   // Per-mode background override (config "backgroundFromMode": { "Mode":
   // "OtherMode" }): the mode borrows OTHER MODE's background image. Plugin-only
   // styling — e.g. Omni-84's AutoStrum keeps its keyswitch-legend background in

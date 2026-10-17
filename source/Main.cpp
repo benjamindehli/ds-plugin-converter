@@ -99,6 +99,25 @@ bool applyConfigFile(const juce::File &cfg, dmconv::ConvertOptions &opts,
         a.tags.add(t.toString());
     opts.airSupply = a;
   }
+  if (auto *kp = o->getProperty("keyPressure").getDynamicObject()) {
+    dm::KeyPressure k;
+    auto num = [kp](const char *key, double &field) {
+      if (kp->hasProperty(key))
+        field = (double)kp->getProperty(key);
+    };
+    num("threshold", k.threshold);
+    num("travelCurve", k.travelCurve);
+    num("levelDbBass", k.levelDbBass);
+    num("levelDbTreble", k.levelDbTreble);
+    num("levelCurve", k.levelCurve);
+    num("pitchCents", k.pitchCents);
+    num("brightness", k.brightness);
+    num("smoothingMs", k.smoothingMs);
+    if (auto *tags = kp->getProperty("tags").getArray())
+      for (const auto &t : *tags)
+        k.tags.add(t.toString());
+    opts.keyPressure = k;
+  }
   if (auto *bg = o->getProperty("backgroundFromMode").getDynamicObject())
     for (const auto &p : bg->getProperties())
       opts.backgroundFromMode[p.name.toString()] = p.value.toString();
@@ -217,6 +236,7 @@ bool applyConfigFile(const juce::File &cfg, dmconv::ConvertOptions &opts,
                                     "omnichordStrum",
                                     "strumKeyLabels",
                                     "airSupply",
+                                    "keyPressure",
                                     "backgroundFromMode",
                                     "overlay",
                                     "overlayScope",

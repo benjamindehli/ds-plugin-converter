@@ -276,6 +276,8 @@ ConvertResult convertLibrary(const ConvertOptions &options) {
   library.retriggerMuteDefault = options.retriggerMuteDefault;
   library.airSupply =
       options.airSupply; // shared-air simulation (settings toggle)
+  library.keyPressure =
+      options.keyPressure; // per-key air from pressure (settings toggle)
 
   juce::StringPairArray
       assets; // id -> library-relative path (deduped across modes)
