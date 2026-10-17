@@ -41,8 +41,8 @@ bool transcodeToFlac(const juce::File &wav, const juce::File &outFlac,
   outFrames = reader->lengthInSamples;
 
   outFlac.deleteFile();
-  std::unique_ptr<juce::FileOutputStream> out(outFlac.createOutputStream());
-  if (out == nullptr || !out->openedOk()) {
+  std::unique_ptr<juce::FileOutputStream> file(outFlac.createOutputStream());
+  if (file == nullptr || !file->openedOk()) {
     error = "cannot write " + outFlac.getFullPathName();
     return false;
   }
@@ -59,13 +59,16 @@ bool transcodeToFlac(const juce::File &wav, const juce::File &outFlac,
   }
 
   juce::FlacAudioFormat flac;
-  std::unique_ptr<juce::AudioFormatWriter> writer(flac.createWriterFor(
-      out.get(), reader->sampleRate, reader->numChannels, bits, {}, 0));
+  std::unique_ptr<juce::OutputStream> out = std::move(file);
+  auto writer = flac.createWriterFor(
+      out, juce::AudioFormatWriterOptions{}
+               .withSampleRate(reader->sampleRate)
+               .withNumChannels((int)reader->numChannels)
+               .withBitsPerSample(bits)); // takes ownership of out
   if (writer == nullptr) {
     error = "cannot create FLAC writer for " + outFlac.getFullPathName();
     return false;
   }
-  out.release(); // writer owns the stream now
 
   const bool ok =
       writer->writeFromAudioReader(*reader, 0, reader->lengthInSamples);

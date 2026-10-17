@@ -13,11 +13,12 @@ void writeSilentWav(const juce::File &file, int frames) {
   file.deleteFile();
 
   juce::WavAudioFormat wav;
-  std::unique_ptr<juce::FileOutputStream> out(file.createOutputStream());
-  std::unique_ptr<juce::AudioFormatWriter> writer(
-      wav.createWriterFor(out.get(), 48000.0, 1, 16, {}, 0));
+  std::unique_ptr<juce::OutputStream> out(file.createOutputStream());
+  auto writer = wav.createWriterFor(out, juce::AudioFormatWriterOptions{}
+                                             .withSampleRate(48000.0)
+                                             .withNumChannels(1)
+                                             .withBitsPerSample(16));
   if (writer != nullptr) {
-    out.release();
     juce::AudioBuffer<float> buf(1, frames);
     buf.clear();
     writer->writeFromAudioSampleBuffer(buf, 0, frames);
