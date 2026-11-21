@@ -92,6 +92,10 @@ public:
     opts.labelsById["btn_0"] = "Velocity";
     opts.labelsById["menu_0"] = "Chord order";
     opts.labelsById["btn_9"] = "Nowhere";
+    // In mode Two, btn_0 is another button, and its own label wins there.
+    opts.labelsByMode["Two"]["btn_0"] = "Voices";
+    opts.labelsByMode["Two"]["btn_8"] = "Nowhere either";
+    opts.labelsByMode["Three"]["btn_0"] = "No such mode";
 
     auto result = dmconv::convertLibrary(opts);
     expect(result.ok,
@@ -101,15 +105,20 @@ public:
     expect(m.ok && m.library.modes.size() == 2, "both modes converted");
     for (const auto &mode : m.library.modes) {
       const auto &tab = mode.ui.tabs.getReference(0);
-      expectEquals(tab.buttons.getReference(0).label, juce::String("Velocity"),
-                   mode.name + ": the labelled button");
+      expectEquals(tab.buttons.getReference(0).label,
+                   juce::String(mode.name == "Two" ? "Voices" : "Velocity"),
+                   mode.name + ": the labelled button, by the mode's own "
+                               "label where it has one");
       expect(tab.buttons.getReference(1).label.isEmpty(),
              mode.name + ": a button with no entry stays unlabelled");
       expectEquals(tab.menus.getReference(0).label, juce::String("Chord order"),
                    mode.name + ": the menu");
     }
-    expect(result.warnings.joinIntoString("\n").contains("btn_9"),
-           "an id that names nothing is reported");
+    const auto warnings = result.warnings.joinIntoString("\n");
+    expect(warnings.contains("btn_9"), "an id that names nothing is reported");
+    expect(warnings.contains("btn_8"),
+           "so is one that names nothing in its mode");
+    expect(warnings.contains("Three"), "and a mode that does not exist");
 
     root.deleteRecursively();
   }

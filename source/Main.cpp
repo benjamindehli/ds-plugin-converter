@@ -144,10 +144,18 @@ bool applyConfigFile(const juce::File &cfg, dmconv::ConvertOptions &opts,
         for (const auto &s : steps->getProperties())
           m[s.name.toString().getIntValue()] = s.value.toString();
       }
-  // "labels": { "<button or menu id>": "<name>", ... }
+  // "labels": { "<button or menu id>": "<name>", ...,
+  //             "<mode name>": { "<id>": "<name>", ... } }
   if (auto *lb = o->getProperty("labels").getDynamicObject())
-    for (const auto &l : lb->getProperties())
-      opts.labelsById[l.name.toString()] = l.value.toString();
+    for (const auto &l : lb->getProperties()) {
+      if (auto *inMode = l.value.getDynamicObject()) {
+        auto &labels = opts.labelsByMode[l.name.toString()];
+        for (const auto &ml : inMode->getProperties())
+          labels[ml.name.toString()] = ml.value.toString();
+      } else {
+        opts.labelsById[l.name.toString()] = l.value.toString();
+      }
+    }
   if (auto *dt = o->getProperty("dropGroupTags").getArray())
     for (const auto &t : *dt)
       opts.dropGroupTags.add(t.toString());

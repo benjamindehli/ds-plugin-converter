@@ -829,6 +829,7 @@ ConvertResult convertLibrary(const ConvertOptions &options) {
 
   // The ids a "labels" entry was used for, across every mode. See below.
   std::set<juce::String> labelledIds;
+  std::map<juce::String, std::set<juce::String>> labelledInMode;
 
   // Per-mode top crop (engine applies it: trims the background top, shrinks
   // height, shifts elements up). Keyed by mode name; cropTopDefault covers the
@@ -885,22 +886,36 @@ ConvertResult convertLibrary(const ConvertOptions &options) {
               vlIt != options.valueLabelsByControl.end())
             c.valueLabels = vlIt->second;
 
-    // Button and menu labels (config "labels", keyed by id).
-    if (!options.labelsById.empty())
+    // Button and menu labels (config "labels", keyed by id), with the mode's
+    // own labels first.
+    if (!options.labelsById.empty() || !options.labelsByMode.empty()) {
+      const auto modeIt = options.labelsByMode.find(mode.name);
+      const auto *modeLabels =
+          modeIt != options.labelsByMode.end() ? &modeIt->second : nullptr;
+      const auto labelFor =
+          [&](const juce::String &id) -> const juce::String * {
+        if (modeLabels != nullptr)
+          if (const auto named = modeLabels->find(id);
+              named != modeLabels->end()) {
+            labelledInMode[mode.name].insert(id);
+            return &named->second;
+          }
+        if (const auto named = options.labelsById.find(id);
+            named != options.labelsById.end()) {
+          labelledIds.insert(id);
+          return &named->second;
+        }
+        return nullptr;
+      };
       for (auto &tab : mode.ui.tabs) {
         for (auto &b : tab.buttons)
-          if (const auto named = options.labelsById.find(b.id);
-              named != options.labelsById.end()) {
-            b.label = named->second;
-            labelledIds.insert(b.id);
-          }
+          if (const auto *label = labelFor(b.id))
+            b.label = *label;
         for (auto &m : tab.menus)
-          if (const auto named = options.labelsById.find(m.id);
-              named != options.labelsById.end()) {
-            m.label = named->second;
-            labelledIds.insert(m.id);
-          }
+          if (const auto *label = labelFor(m.id))
+            m.label = *label;
       }
+    }
   }
 
   // A label whose id names no button or menu in any mode is most likely a
@@ -909,6 +924,21 @@ ConvertResult convertLibrary(const ConvertOptions &options) {
     if (labelledIds.count(id) == 0)
       result.warnings.add("labels: no button or menu has the id \"" + id +
                           "\", so \"" + label + "\" was not used");
+  for (const auto &[modeName, labels] : options.labelsByMode) {
+    bool modeFound = false;
+    for (const auto &mode : library.modes)
+      modeFound = modeFound || mode.name == modeName;
+    if (!modeFound) {
+      result.warnings.add("labels: no mode is called \"" + modeName +
+                          "\", so its labels were not used");
+      continue;
+    }
+    for (const auto &[id, label] : labels)
+      if (labelledInMode[modeName].count(id) == 0)
+        result.warnings.add("labels: mode \"" + modeName +
+                            "\" has no button or menu with the id \"" + id +
+                            "\", so \"" + label + "\" was not used");
+  }
 
   // Drop DecentSampler duplicate groups (e.g. A2), compensate loudness, and
   // auto-link stereo → double-track. No-op unless dropGroupTags is set.

@@ -171,6 +171,11 @@ struct ConvertOptions {
   // .dspreset's order). Applied to every mode, so a reconversion keeps them.
   std::map<juce::String, juce::String> labelsById;
 
+  // Labels for one mode, where the same id is a different button there (config
+  // "labels": { ..., "Drums": { "btn_0": "Velocity" } }). Keyed by mode name,
+  // then id, and taking precedence over labelsById in that mode.
+  std::map<juce::String, std::map<juce::String, juce::String>> labelsByMode;
+
   // Drop groups carrying any of these tags + all bindings targeting them. Used
   // to remove DecentSampler workaround duplicates (e.g. VCCO's "A2" = a copy of
   // "A" for the double- track-off state). From dmse-convert.json
