@@ -144,6 +144,10 @@ bool applyConfigFile(const juce::File &cfg, dmconv::ConvertOptions &opts,
         for (const auto &s : steps->getProperties())
           m[s.name.toString().getIntValue()] = s.value.toString();
       }
+  // "labels": { "<button or menu id>": "<name>", ... }
+  if (auto *lb = o->getProperty("labels").getDynamicObject())
+    for (const auto &l : lb->getProperties())
+      opts.labelsById[l.name.toString()] = l.value.toString();
   if (auto *dt = o->getProperty("dropGroupTags").getArray())
     for (const auto &t : *dt)
       opts.dropGroupTags.add(t.toString());
@@ -244,6 +248,7 @@ bool applyConfigFile(const juce::File &cfg, dmconv::ConvertOptions &opts,
                                     "blackKeyTint",
                                     "menuPopupColors",
                                     "valueLabels",
+                                    "labels",
                                     "dropGroupTags",
                                     "doubleTrackBoostTag",
                                     "doubleTrackStereoBoost",

@@ -4,6 +4,7 @@
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <model/Manifest.h>
 #include <model/ManifestWriter.h>
+#include <set>
 
 namespace dmconv {
 
@@ -826,6 +827,9 @@ ConvertResult convertLibrary(const ConvertOptions &options) {
       }
     }
 
+  // The ids a "labels" entry was used for, across every mode. See below.
+  std::set<juce::String> labelledIds;
+
   // Per-mode top crop (engine applies it: trims the background top, shrinks
   // height, shifts elements up). Keyed by mode name; cropTopDefault covers the
   // rest.
@@ -880,7 +884,31 @@ ConvertResult convertLibrary(const ConvertOptions &options) {
           if (const auto vlIt = options.valueLabelsByControl.find(c.label);
               vlIt != options.valueLabelsByControl.end())
             c.valueLabels = vlIt->second;
+
+    // Button and menu labels (config "labels", keyed by id).
+    if (!options.labelsById.empty())
+      for (auto &tab : mode.ui.tabs) {
+        for (auto &b : tab.buttons)
+          if (const auto named = options.labelsById.find(b.id);
+              named != options.labelsById.end()) {
+            b.label = named->second;
+            labelledIds.insert(b.id);
+          }
+        for (auto &m : tab.menus)
+          if (const auto named = options.labelsById.find(m.id);
+              named != options.labelsById.end()) {
+            m.label = named->second;
+            labelledIds.insert(m.id);
+          }
+      }
   }
+
+  // A label whose id names no button or menu in any mode is most likely a
+  // typo, or the .dspreset's controls have moved, so it is reported.
+  for (const auto &[id, label] : options.labelsById)
+    if (labelledIds.count(id) == 0)
+      result.warnings.add("labels: no button or menu has the id \"" + id +
+                          "\", so \"" + label + "\" was not used");
 
   // Drop DecentSampler duplicate groups (e.g. A2), compensate loudness, and
   // auto-link stereo → double-track. No-op unless dropGroupTags is set.

@@ -165,6 +165,12 @@ struct ConvertOptions {
   // value. Keyed by the control's parameterName; applied to every mode.
   std::map<juce::String, std::map<int, juce::String>> valueLabelsByControl;
 
+  // Button and menu labels (config "labels": { "btn_0": "Velocity", "menu_0":
+  // "Chord order", ... }): what a screen reader and the host call each one,
+  // keyed by the id the converter gives it (btn_<n> and menu_<n>, in the
+  // .dspreset's order). Applied to every mode, so a reconversion keeps them.
+  std::map<juce::String, juce::String> labelsById;
+
   // Drop groups carrying any of these tags + all bindings targeting them. Used
   // to remove DecentSampler workaround duplicates (e.g. VCCO's "A2" = a copy of
   // "A" for the double- track-off state). From dmse-convert.json

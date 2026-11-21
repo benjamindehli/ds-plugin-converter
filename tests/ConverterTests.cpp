@@ -50,6 +50,68 @@ public:
     testBackgroundFromMode();
     testOverlay();
     testValueLabels();
+    testLabels();
+  }
+
+  void testLabels() {
+    beginTest("labels recipe names buttons and menus by id, in every mode");
+
+    auto root = juce::File::getSpecialLocation(juce::File::tempDirectory)
+                    .getChildFile("dmse_converter_labels_test");
+    root.deleteRecursively();
+    root.createDirectory();
+    auto libDir = root.getChildFile("lib");
+    auto outDir = root.getChildFile("out");
+    writeSilentWav(libDir.getChildFile("Samples/a.wav"), 1000);
+
+    const juce::String preset = R"(<?xml version="1.0"?>
+<DecentSampler>
+  <ui width="400" height="200"><tab name="main">
+    <button x="10" y="10" width="40" height="20" value="0">
+      <state name="off"/><state name="on"/>
+    </button>
+    <button x="60" y="10" width="40" height="20" value="0">
+      <state name="off"/><state name="on"/>
+    </button>
+    <menu x="110" y="10" width="80" height="20" value="1">
+      <option name="Up"/><option name="Down"/>
+    </menu>
+  </tab></ui>
+  <groups attack="0" decay="0" sustain="1" release="0.1">
+    <group><sample path="Samples/a.wav" loNote="60" hiNote="60" rootNote="60" length="1000" sampleRate="48000"/></group>
+  </groups>
+</DecentSampler>)";
+    libDir.getChildFile("One.dspreset").replaceWithText(preset);
+    libDir.getChildFile("Two.dspreset").replaceWithText(preset);
+
+    dmconv::ConvertOptions opts;
+    opts.packSamples = false;
+    opts.libraryDir = libDir;
+    opts.outDir = outDir;
+    opts.libraryName = "LabelLib";
+    opts.labelsById["btn_0"] = "Velocity";
+    opts.labelsById["menu_0"] = "Chord order";
+    opts.labelsById["btn_9"] = "Nowhere";
+
+    auto result = dmconv::convertLibrary(opts);
+    expect(result.ok,
+           "conversion should succeed: " + result.errors.joinIntoString("; "));
+
+    auto m = dm::loadManifestFromFolder(outDir.getChildFile("manifest"));
+    expect(m.ok && m.library.modes.size() == 2, "both modes converted");
+    for (const auto &mode : m.library.modes) {
+      const auto &tab = mode.ui.tabs.getReference(0);
+      expectEquals(tab.buttons.getReference(0).label, juce::String("Velocity"),
+                   mode.name + ": the labelled button");
+      expect(tab.buttons.getReference(1).label.isEmpty(),
+             mode.name + ": a button with no entry stays unlabelled");
+      expectEquals(tab.menus.getReference(0).label, juce::String("Chord order"),
+                   mode.name + ": the menu");
+    }
+    expect(result.warnings.joinIntoString("\n").contains("btn_9"),
+           "an id that names nothing is reported");
+
+    root.deleteRecursively();
   }
 
   void testValueLabels() {
