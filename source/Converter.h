@@ -103,12 +103,13 @@ struct ConvertOptions {
   // opt-out.
   bool normalizeIr = true;
 
-  // When true (default), sample FLACs are concatenated into a single pack
-  // (samples/samples.pak + samples.pak.json index) instead of individual files,
-  // so the plugin memory-maps them from disk rather than compiling them into
-  // the binary — small binaries, fast launch, low RAM, no per-format
-  // duplication. IRs + images stay individual (small → embedded). Opt out with
-  // --no-pack-samples / "packSamples": false.
+  // When true (default), sample and IR FLACs are concatenated into a single
+  // pack (samples/samples.pak + samples.pak.json index) instead of individual
+  // files, so the plugin memory-maps them from disk rather than compiling them
+  // into the binary — small binaries, fast launch, low RAM, no per-format
+  // duplication, and no paid audio needed to build the plugin. Images stay
+  // individual (small → embedded). Opt out with --no-pack-samples /
+  // "packSamples": false.
   bool packSamples = true;
 
   // Added to every UI element's y so manifest coords are background-relative:

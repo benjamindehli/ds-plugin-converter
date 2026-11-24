@@ -46,6 +46,7 @@ public:
     testUiYOffset();
     testSplitManifestOutput();
     testSamplePack();
+    testPackHoldsIrs();
     testOmnichordStrum();
     testBackgroundFromMode();
     testOverlay();
@@ -831,6 +832,65 @@ public:
       expect((juce::int64)(off + len) <=
                  outDir.getChildFile("samples/samples.pak").getSize(),
              "entry fits inside the pack");
+    }
+
+    root.deleteRecursively();
+  }
+
+  // The plugins are built where the paid audio is not, so the IRs must travel
+  // in the pack with the samples rather than be compiled into the binary.
+  void testPackHoldsIrs() {
+    beginTest("pack mode puts the IRs in the pack, also when samples are "
+              "reused");
+
+    auto root = juce::File::getSpecialLocation(juce::File::tempDirectory)
+                    .getChildFile("dmse_converter_pack_ir_test");
+    root.deleteRecursively();
+    root.createDirectory();
+
+    auto libDir = root.getChildFile("lib");
+    auto outDir = root.getChildFile("out");
+    writeSilentWav(libDir.getChildFile("Samples/a.wav"), 1000);
+    writeSilentWav(libDir.getChildFile("IR/space.wav"), 200);
+
+    libDir.getChildFile("Kit.dspreset").replaceWithText(R"(<?xml version="1.0"?>
+<DecentSampler>
+  <groups attack="0" decay="0" sustain="1" release="0.1">
+    <group>
+      <sample path="Samples/a.wav" loNote="60" hiNote="60" rootNote="60" length="1000" sampleRate="48000"/>
+    </group>
+  </groups>
+  <effects>
+    <effect type="convolution" irFile="IR/space.wav" wetLevel="0.3"/>
+  </effects>
+</DecentSampler>)");
+
+    dmconv::ConvertOptions opts;
+    opts.libraryDir = libDir;
+    opts.outDir = outDir;
+
+    auto packedIds = [&] {
+      juce::StringArray ids;
+      juce::var idx;
+      if (juce::JSON::parse(outDir.getChildFile("samples/samples.pak.json")
+                                .loadFileAsString(),
+                            idx)
+              .wasOk())
+        if (auto *entries = idx.getArray())
+          for (const auto &e : *entries)
+            ids.add(e.getProperty("id", "").toString());
+      ids.sort(false);
+      return ids;
+    };
+
+    for (const auto *run : {"first run", "second run, nothing changed"}) {
+      auto result = dmconv::convertLibrary(opts);
+      expect(result.ok,
+             juce::String(run) + ": " + result.errors.joinIntoString("; "));
+      expectEquals(packedIds().joinIntoString(","),
+                   juce::String("flac:a,ir:space"), run);
+      expect(!outDir.getChildFile("ir").exists(),
+             juce::String(run) + ": no loose IR folder for the binary");
     }
 
     root.deleteRecursively();

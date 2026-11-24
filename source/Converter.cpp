@@ -509,23 +509,26 @@ ConvertResult convertLibrary(const ConvertOptions &options) {
   const auto imagesDir = options.outDir.getChildFile("images");
 
   // Clean stale generated assets (re-runs, and the old flat layout where audio
-  // + images sat directly in assets/). IR + images are a handful of small
-  // files, so they are always rebuilt; SAMPLES (the bulk) are cleaned only when
-  // actually re-transcoded (the incremental fast path below).
+  // + images sat directly in assets/). Images and loose IRs are a handful of
+  // small files, so they are always rebuilt; SAMPLES (the bulk) and the pack
+  // are cleaned only when actually re-transcoded (the incremental fast path
+  // below).
   for (auto &f : options.outDir.findChildFiles(juce::File::findFiles, false,
                                                "*.flac;*.png;*.jpg;*.jpeg"))
     f.deleteFile();
   irDir.deleteRecursively();
   imagesDir.deleteRecursively();
-  samplesDir.createDirectory();
-  irDir.createDirectory();
-  imagesDir.createDirectory();
-
-  // Sample pack (--pack-samples): concatenate every sample FLAC into one file
-  // the plugin memory-maps, plus a JSON index of [id, offset, length]. Avoids
-  // compiling a multi-GB library into the binary. IRs + images stay individual
-  // (small → embedded).
+  // Sample pack (--pack-samples): concatenate every sample and IR FLAC into one
+  // file the plugin memory-maps, plus a JSON index of [id, offset, length].
+  // Avoids compiling a multi-GB library into the binary. The IRs go in the pack
+  // too because they are paid audio like the samples: the plugins are built on
+  // GitHub, where neither exists, and the pack is what ships beside them.
+  // Images stay individual (small, committed, embedded).
   const bool packing = options.packSamples;
+  samplesDir.createDirectory();
+  if (!packing)
+    irDir.createDirectory();
+  imagesDir.createDirectory();
   const auto packFile = samplesDir.getChildFile("samples.pak");
   const auto packIndexFile = samplesDir.getChildFile("samples.pak.json");
 
@@ -537,9 +540,13 @@ ConvertResult convertLibrary(const ConvertOptions &options) {
   // FLAC headers for loose). A manifest-only edit (strum keys, colours, gains)
   // then reconverts in a moment. --force always rebuilds.
   const auto sigFile = samplesDir.getChildFile(".cache-sig");
-  juce::String sig = packing ? "pack\n" : "loose\n";
+  // In the pack, IRs are cached with the samples. Loose, they are rebuilt.
+  const auto cachedHere = [packing](const juce::String &id) {
+    return !id.startsWith("img:") && (packing || !id.startsWith("ir:"));
+  };
+  juce::String sig = packing ? "pack+ir\n" : "loose\n";
   for (auto &id : assets.getAllKeys())
-    if (!id.startsWith("img:") && !id.startsWith("ir:")) {
+    if (cachedHere(id)) {
       const auto sf = options.libraryDir.getChildFile(assets[id]);
       sig << id << "|" << sf.getLastModificationTime().toMilliseconds() << "|"
           << sf.getSize() << "\n";
@@ -629,13 +636,12 @@ ConvertResult convertLibrary(const ConvertOptions &options) {
     }
 
     const bool isIr = id.startsWith("ir:");
-    if (reuseSamples && !isIr) // sample already cached (frames set above)
+    if (reuseSamples && cachedHere(id)) // already cached (frames set above)
       continue;
 
-    // Packed samples: transcode to a temp FLAC (proven path), append its bytes
-    // to the pack, and record the slice. IRs are never packed (they stay
-    // embedded).
-    if (packing && !isIr && packOut != nullptr) {
+    // Packed samples and IRs: transcode to a temp FLAC (proven path), append
+    // its bytes to the pack, and record the slice.
+    if (packing && packOut != nullptr) {
       const auto tmp = samplesDir.getChildFile("~pack_tmp.flac");
       juce::int64 frames = 0;
       juce::String formatNote, error;
@@ -652,6 +658,8 @@ ConvertResult convertLibrary(const ConvertOptions &options) {
           packEntries.add(juce::var(e));
           ++result.assetsTranscoded;
           actualFrames.set(id, frames);
+          if (isIr)
+            result.log.add("ir    samples/samples.pak " + id);
         } else
           result.errors.add("cannot read temp FLAC for packing: " + id);
         if (formatNote.isNotEmpty())
@@ -687,7 +695,7 @@ ConvertResult convertLibrary(const ConvertOptions &options) {
     packIndexFile.replaceWithText(juce::JSON::toString(juce::var(packEntries)));
     result.log.add("pack  samples/samples.pak (" +
                    juce::String(packEntries.size()) +
-                   " samples) + samples.pak.json");
+                   " samples and IRs) + samples.pak.json");
   }
 
   // Remember this sample set so the next run can skip re-transcoding (only when
